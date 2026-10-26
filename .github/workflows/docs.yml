@@ -24,14 +24,20 @@ jobs:
   docs:
     uses: max-models/starlight-theme/.github/workflows/docs.yml@v0.5.0
     with:
+      # mpi4py and Open MPI: the MPI tutorial runs its script under mpiexec
+      extras: docs mpi
+      apt-packages: "libopenmpi-dev openmpi-bin"
       pre-build: uv run python docs/tools/examples.py
       smoke-paths: |
         getting-started/installation/index.html
+        getting-started/quickstart/index.html
         tutorials/index.html
-        tutorials/example-tutorial/index.html
+        tutorials/getting-started/index.html
+        tutorials/mpi-and-halos/index.html
+        tutorials/getting-started/getting_started.ipynb
         full-examples/index.html
-        full-examples/sine-wave/index.html
+        full-examples/01-cloud-in-cell-density/index.html
+        full-examples/01-cloud-in-cell-density/plot-1.png
+        full-examples/12-kernel-backends/index.html
         api/mpifield/index.html
-        api/mpifield/main/index.html
-        tutorials/example-tutorial/example_tutorial.ipynb
-        full-examples/sine-wave/plot-1.png
+        api/mpifield/field/index.html

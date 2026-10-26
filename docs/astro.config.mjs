@@ -6,7 +6,7 @@ import { defineDocs } from '@max-models/starlight-theme';
 export default defineDocs({
 	repo: 'mpifield',
 	title: 'mpifield',
-	description: 'Template repository for Python projects.',
+	description: 'Fields on uniform grids split over MPI ranks, with compiled linear gather and scatter for particle codes.',
 	pythonPackage: 'mpifield',
 	nav: [
 		{ label: 'Getting started', link: '/getting-started/installation/' },
@@ -34,6 +34,7 @@ export default defineDocs({
 		{
 			label: 'Development',
 			items: [
+				{ label: 'Testing', slug: 'development/testing' },
 				{ label: 'Building the docs', slug: 'development/docs' },
 				{ label: 'Publishing', slug: 'development/publishing' },
 			],

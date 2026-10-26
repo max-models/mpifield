@@ -5,9 +5,9 @@ requires = [ "setuptools", "wheel" ]
 [project]
 name = "mpifield"
 version = "0.1.0"
-description = "Template python repository."
+description = "Fields on uniform grids split over MPI ranks, with compiled linear gather and scatter for particle codes."
 readme = "README.md"
-keywords = [ "python" ]
+keywords = [ "cuda", "field", "mpi", "particle-in-cell", "plasma", "pyccel" ]
 license = { file = "LICENSE.txt" }
 authors = [ { name = "Max" } ]
 requires-python = ">=3.10"
@@ -23,8 +23,18 @@ classifiers = [
 # PyPI rejects direct references (name @ git+...), so only version ranges go here; the
 # max-models packages come from their devel branches through [tool.uv.sources]
 dependencies = [
+  "cunumpy>=0.7",
+  # MPI only under an MPI launcher (mpirun, srun); a serial stand-in for mpi4py otherwise
+  "maybempi>=0.1.2",
+  "mpiarray>=0.2.1",
   "numpy",
+  # the CPU kernels: compiled on first use; their sources import Pyccel's OpenMP module
+  "pyccel>2.0",
+  # xarray's linear interpolation in Field.evaluate
+  "scipy",
   "scope-profiler>=0.7.5",
+  "simgeometry>=0.1.1",
+  "xarray",
 ]
 optional-dependencies.dev = [
   "jupyterlab",
@@ -36,17 +46,23 @@ optional-dependencies.dev = [
 ]
 optional-dependencies.docs = [
   "griffe",
+  "mpifield[plot]",
   "ipykernel",
   "matplotlib>=3.10.9",
   "nbclient>=0.11",
   "nbformat>=5.11.1",
 ]
-optional-dependencies.test = [ "pytest", "pytest-cov" ]
+optional-dependencies.gpu = [ "cupy-cuda12x" ]
+optional-dependencies.metal = [ "mlx; sys_platform == 'darwin' and platform_machine == 'arm64'" ]
+optional-dependencies.mpi = [ "mpi4py" ]
+# Field.plot draws with plasma-plots
+optional-dependencies.plot = [ "matplotlib>=3.10", "plasma-plots>=0.2.5" ]
+optional-dependencies.test = [ "mpifield[plot]", "pytest", "pytest-cov", "pytest-mpi" ]
 urls.Source = "https://github.com/max-models/mpifield"
-scripts.mpifield = "mpifield.main:main"
 
 [tool.setuptools]
 package-data."*" = [ "py.typed" ]
+package-data.mpifield = [ "kernels/*.cuh", "kernels/*/*.cu" ]
 packages.find.where = [ "src" ]
 
 [tool.ruff]
@@ -59,18 +75,27 @@ lint.ignore = [ "E501" ]  # line length is handled by the formatter
 lint.per-file-ignores."**/tests/**" = [ "D" ]
 lint.per-file-ignores."*.ipynb" = [ "D" ]
 lint.per-file-ignores."docs/tools/*" = [ "D" ]
+# the first docstring line is the page title, the rest Markdown with LaTeX
+lint.per-file-ignores."examples/*" = [ "D301", "D415" ]
+# the kernel bodies are Pyccel source: type annotations as strings, loops on purpose
+lint.per-file-ignores."src/mpifield/kernels/*/*_pyccel.py" = [ "D", "F722", "F821", "UP" ]
 lint.pydocstyle.convention = "google"
 
 [tool.pyright]
 include = [ "src" ]
-exclude = [ "**/tests" ]
+# the Pyccel kernel bodies annotate their arrays as Pyccel types ("float[:,:]")
+exclude = [ "**/tests", "src/mpifield/kernels/*/*_pyccel.py" ]
 pythonVersion = "3.10"
-typeCheckingMode = "standard"
+# As in simgeometry: the code extracted from picnic predates strict typing (the kernel
+# wrappers pass the grid geometry as star-args); keep import resolution checked.
+typeCheckingMode = "off"
+reportMissingImports = "error"
 
 [tool.pytest]
 ini_options.pythonpath = [ "src" ]
 ini_options.testpaths = [ "src" ]
 ini_options.addopts = "-ra"
+ini_options.markers = [ "mpi: tests run under mpiexec with --with-mpi (pytest-mpi)" ]
 
 [tool.coverage]
 run.omit = [ "*/tests/*" ]
@@ -82,4 +107,9 @@ report.show_missing = true
 [tool.uv.sources]
 # one entry per max-models package in [project], spelled exactly like this in every repo:
 # cunumpy = { git = "https://github.com/max-models/cunumpy", branch = "devel" }
+cunumpy = { git = "https://github.com/max-models/cunumpy", branch = "devel" }
+maybempi = { git = "https://github.com/max-models/maybempi", branch = "devel" }
+mpiarray = { git = "https://github.com/max-models/mpiarray", branch = "devel" }
+plasma-plots = { git = "https://github.com/max-models/plasma-plots", branch = "devel" }
 scope-profiler = { git = "https://github.com/max-models/scope-profiler", branch = "devel" }
+simgeometry = { git = "https://github.com/max-models/simgeometry", branch = "devel" }

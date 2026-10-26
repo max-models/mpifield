@@ -40,9 +40,12 @@ jobs:
           cache: npm
           cache-dependency-path: docs/package-lock.json
 
+      - name: Install Open MPI (the MPI tutorial runs mpiexec)
+        run: sudo apt-get update && sudo apt-get install -y libopenmpi-dev openmpi-bin
+
       - name: Install project
         run: |
-          uv sync --extra docs
+          uv sync --extra docs --extra mpi
           uv run python -m ipykernel install --user --name python3
           cd docs && npm ci
 

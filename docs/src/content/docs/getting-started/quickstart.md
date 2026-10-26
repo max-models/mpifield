@@ -1,44 +1,81 @@
 ---
 title: Quickstart
-description: Run the command line entry point of mpifield.
+description: A field, a deposit, a gather and a plot.
 ---
 
-First, ensure that `mpifield` is [installed](/mpifield/getting-started/installation/).
+First, ensure that `mpifield` is [installed](/mpifield/getting-started/installation/), with the
+`plot` extra for the plots.
 
-## Basic usage
+## A field
 
-After installation, you can run the application with:
-
-```bash
-mpifield
-```
-
-which calls `mpifield.main.main` and prints a greeting.
-
-## Use the package from Python
+A `Field` is a uniform grid (a simgeometry `Grid`) with values on its nodes:
 
 ```python
-from mpifield.main import main
+import numpy as np
+from mpifield import Field
 
-main()
+phi = Field(
+    ndim=2, lower_bound=(0.0, 0.0), upper_bound=(0.1, 0.05), num_gridpoints=(101, 51)
+)
+x, y = np.meshgrid(*phi.get_grid_points(), indexing="ij")
+phi.set_field_data(1000.0 * np.exp(-((x - 0.05) ** 2 + (y - 0.025) ** 2) / 1e-4))
+E = -phi.gradient()  # two components, V/m
 ```
 
-See the [API reference](/mpifield/api/mpifield/) for every module and function.
+## Markers
+
+Positions are component-major, `(ndim, N)`; values `(ncomp, N)`.
+
+```python
+positions = np.random.default_rng(0).random((2, 10_000)) * [[0.1], [0.05]]
+
+field_at_markers = E.interpolate_field(positions)  # (2, N), the linear gather
+
+density = Field(
+    ndim=2, lower_bound=(0.0, 0.0), upper_bound=(0.1, 0.05), num_gridpoints=(101, 51)
+)
+density.scatter_linear(positions, np.ones((1, 10_000)))  # the cloud-in-cell deposit
+print(density.sum())  # 10000.0: the deposit conserves the total
+```
+
+## Looking at it
+
+`evaluate` gives an `xarray.DataArray` of the nodes, a line or a plane; `plot` draws it with
+[plasma-plots](https://github.com/max-models/plasma-plots):
+
+```python
+profile = phi.evaluate(y=0.025)  # a line along x
+phi.plot(name="potential", units="V")  # a map
+E.evaluate().plasma.plot.vector(x="x", y="y", stride=5)
+```
+
+## Under MPI
+
+The same code splits the grid over the ranks with `comm` and `domain_decomposition`; deposits
+are completed with `exchange_halos`, and halos are filled for gathers with `fill_halos`:
+
+```python
+from maybempi import MPI
+
+density = Field(
+    ndim=2,
+    lower_bound=(0.0, 0.0),
+    upper_bound=(0.1, 0.05),
+    num_gridpoints=(101, 51),
+    comm=MPI.COMM_WORLD,
+    domain_decomposition=[True, True],
+    num_ghost_points=1,
+)
+```
+
+See the [MPI tutorial](/mpifield/tutorials/mpi-and-halos/), and the
+[full examples](/mpifield/full-examples/) for a gallery of complete scripts. The
+[API reference](/mpifield/api/mpifield/) documents every class and function.
 
 ## Profiling
 
-mpifield's coarse operations are [scope-profiler](https://github.com/max-models/scope-profiler)
-regions (`mpifield.main` here), tagged with the opt-in tag `mpifield`: they are
-off by default and cost a fraction of a microsecond per call. A code that profiles itself with
-scope-profiler turns them on with the tag:
-
-```python
-import scope_profiler as sp
-
-sp.setup(enable_tags=["mpifield"])
-```
-
-or without editing the code, with `SCOPE_PROFILER_ENABLE_TAGS=mpifield`,
-`scope-profiler run --enable-tag mpifield` or `enable_tags = ["mpifield"]` in the
-TOML configuration. New regions use `@sp.profile("mpifield.<name>", tags=PROFILE_TAGS)`
-with `PROFILE_TAGS` from the package's `_profiling` module.
+mpifield's coarse operations (`mpifield.Field.interpolate_field`, `scatter_linear`, `smooth`,
+`gradient`) are [scope-profiler](https://github.com/max-models/scope-profiler) regions with
+the opt-in tag `mpifield`: off by default, they cost a fraction of a microsecond per call.
+Turn them on with `scope_profiler.setup(enable_tags=["mpifield"])`,
+`SCOPE_PROFILER_ENABLE_TAGS=mpifield` or `scope-profiler run --enable-tag mpifield`.

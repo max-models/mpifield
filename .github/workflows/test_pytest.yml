@@ -47,6 +47,43 @@ jobs:
           flags: python-${{ matrix.python-version }}
           fail_ci_if_error: false
 
+  # The same tests under mpiexec: the parallel ones check that the results do not depend
+  # on the number of ranks.
+  mpi:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ranks: [2, 4]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Open MPI
+        uses: mpi4py/setup-mpi@v1
+        with:
+          mpi: openmpi
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install project with mpi4py built against Open MPI
+        run: |
+          uv sync --extra test
+          uv pip install --no-binary mpi4py mpi4py
+
+      - name: Run the tests under mpiexec -n ${{ matrix.ranks }}
+        run: |
+          mpiexec -n ${{ matrix.ranks }} --oversubscribe .venv/bin/python -m pytest -q \
+            -p no:cacheprovider --with-mpi src/mpifield/tests
+
+      - name: Run the MPI example
+        run: mpiexec -n ${{ matrix.ranks }} --oversubscribe .venv/bin/python examples/mpi/deposit_on_ranks.py
+
   # PyPI rejects a release whose metadata has a direct reference (name @ git+...), so a pull
   # request to main fails here instead of the release after the merge.
   no-direct-references:

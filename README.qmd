@@ -15,82 +15,87 @@ format:
 [![PyPI](https://img.shields.io/pypi/v/mpifield)](https://pypi.org/project/mpifield/)
 [![Python](https://img.shields.io/pypi/pyversions/mpifield)](https://pypi.org/project/mpifield/)
 
-Template repository for Python projects: a `src/` package with a console entry point,
-`pytest` tests, GitHub Actions for tests, static analysis, tutorials, documentation and
-PyPI publishing, and an [Astro](https://astro.build/) + [Starlight](https://starlight.astro.build/)
-documentation site.
+Fields on uniform grids split over MPI ranks, with compiled linear gather and scatter for
+particle codes. A `Field` holds the values on the nodes of a 1D, 2D or 3D grid (one or several
+components per node) as an [mpiarray](https://github.com/max-models/mpiarray) distributed array
+with halo nodes; it interpolates the field at marker positions and deposits marker values onto
+the nodes with cloud-in-cell weights, through kernels compiled with Pyccel (CPU, OpenMP), CUDA
+(CuPy arrays) or Metal (Apple-silicon GPUs). It was moved out of
+[picnic](https://github.com/max-models/picnic), so other particle codes can use it without the
+rest of picnic.
 
 Documentation: <https://max-models.github.io/mpifield/>
 
-## Use the template
+```python
+import numpy as np
+from mpifield import Field
 
-Create a repository from this template, then rename the package:
+phi = Field(ndim=2, lower_bound=(0.0, 0.0), upper_bound=(0.1, 0.05), num_gridpoints=(101, 51))
+x, y = np.meshgrid(*phi.get_grid_points(), indexing="ij")
+phi.set_field_data(1000.0 * np.exp(-((x - 0.05) ** 2 + (y - 0.025) ** 2) / 1e-4))
 
-```bash
-bash setup_project.sh my-app
-rm setup_project.sh
+E = -phi.gradient()                              # a field with one component per axis
+positions = np.random.default_rng(0).random((2, 10_000)) * [[0.1], [0.05]]
+E_at_markers = E.interpolate_field(positions)    # (2, N)
+
+density = Field(ndim=2, lower_bound=(0.0, 0.0), upper_bound=(0.1, 0.05), num_gridpoints=(101, 51))
+density.scatter_linear(positions, np.ones((1, 10_000)))   # cloud-in-cell deposit
+phi.plot(name="potential", units="V")            # through plasma-plots
 ```
 
-This replaces `mpifield` with `my-app` everywhere, moves `src/app` to `src/my_app`,
-and points the entry point, tests and docs at it.
+## What is in it
+
+- `Field`: construction (`Field(...)`, `from_array`, `on_grid` for a simgeometry grid),
+  data access (`set_field_data`, `local`, `local_with_halos`, `to_numpy`), halo exchange
+  (`fill_halos`, `exchange_halos`), gather and scatter (`interpolate_field`,
+  `scatter_linear`), arithmetic and ufuncs (a scalar field broadcasts over a vector field's
+  components), `gradient`, `cross`, `dot`, `magnitude`, global reductions, smoothing filters,
+  `set_inside` for simgeometry shapes, `evaluate` to xarray, `plot` with plasma-plots, and
+  NetCDF `export`/`load`.
+- `mpifield.kernels`: the six linear kernels (`gather_linear_{1,2,3}d`,
+  `scatter_linear_{1,2,3}d`), each with Pyccel, NumPy, CUDA and Metal versions, callable on
+  plain arrays, e.g. one patch of a refined mesh.
+- `electric_field_from_potential` and `axial_potential`: fields from prescribed potentials.
 
 ## Install
+
+```bash
+pip install mpifield
+pip install "mpifield[mpi,plot]"   # mpi4py for MPI runs, matplotlib and plasma-plots for plots
+```
+
+| Extra | Adds |
+| --- | --- |
+| `mpi` | `mpi4py`, for runs under `mpiexec`/`srun` (serial runs use maybempi's stand-in) |
+| `plot` | matplotlib and plasma-plots, for `Field.plot` |
+| `gpu` | CuPy, for the CUDA kernels |
+| `metal` | MLX, for the Metal kernels on Apple silicon |
+| `test`, `docs`, `dev` | the test runner, the documentation tooling, the linters |
+
+The CPU kernels are compiled with Pyccel on first use and cached under
+`~/.cache/mpifield/kernels` (`MPIFIELD_KERNEL_CACHE`); `MPIFIELD_OPENMP=0` builds them serial.
+`cunumpy.kernels.set_host_kernel_implementation("numpy")` runs the NumPy versions instead,
+e.g. on a machine without a C compiler.
+
+## Development
 
 With [uv](https://docs.astral.sh/uv/):
 
 ```bash
 make install    # uv sync --extra dev, plus the pre-commit hooks
-uv run mpifield
+make lint       # ruff check, ruff format --check, pyright
+make test       # pytest with coverage
+mpiexec -n 2 .venv/bin/python -m pytest --with-mpi src/mpifield/tests   # under MPI
 ```
 
-Or create and activate a Python environment (3.10 or newer):
-
-```bash
-python -m venv env
-source env/bin/activate
-pip install --upgrade pip
-```
-
-Install the code and requirements with pip:
-
-```bash
-pip install -e .
-```
-
-Run the code with:
-
-```bash
-mpifield
-```
-
-The `test`, `docs` and `dev` extras install the test runner, the documentation tooling and
-the linters:
-
-```bash
-pip install -e ".[dev]"
-```
-
-## Development
-
-Formatting and linting use [ruff](https://docs.astral.sh/ruff/), type checking
-[pyright](https://microsoft.github.io/pyright/), run by [pre-commit](https://pre-commit.com/)
-and in CI:
-
-```bash
-make lint     # ruff check, ruff format --check, pyright
-make test     # pytest with coverage
-```
-
-Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/); see
-[CONTRIBUTING.md](CONTRIBUTING.md).
+The tests in `src/mpifield/tests/parallel` check that the results do not depend on the number
+of ranks; CI runs the whole suite serially and under `mpiexec -n 2` and `-n 4`.
 
 ## Build docs
 
 The documentation in `docs/` is an Astro + Starlight site: hand-written pages, the notebooks
-in `tutorials/` executed and published as pages, complete Python scripts in `examples/`
-published with their plots, and the API reference generated from the
-docstrings with [starlight-pydocs](https://ewels.github.io/starlight-pydocs/). It needs
-Node 22 or newer.
+in `tutorials/` executed and published as pages, the scripts in `examples/` published with
+their plots, and the API reference generated from the docstrings. It needs Node 22 or newer.
 
 ```bash
 make docs-install     # npm packages and the Python docs extra
@@ -100,19 +105,11 @@ make docs-dev         # live preview at http://localhost:4321/mpifield/
 make docs-build       # the static site in docs/dist
 ```
 
-## Build the README
-
-`README.md` is rendered from `README.qmd` with [Quarto](https://quarto.org/):
-
-```bash
-make readme
-```
+`README.md` is rendered from `README.qmd` with [Quarto](https://quarto.org/): `make readme`.
 
 ## Releases
 
-Before merging a release to `main`, update the version in `pyproject.toml`,
-`src/mpifield/__init__.py` and `CITATION.cff` (including its release date), and add the release
+Before merging a release to `main`, update the version in `pyproject.toml` and add the release
 notes to `CHANGELOG.md`. The push to `main` creates a GitHub release with a `vX.Y.Z` tag and
-publishes the package to PyPI with trusted publishing (OIDC). The one-time PyPI and GitHub
-configuration is described in the
-[publishing tutorial](https://max-models.github.io/mpifield/development/publishing/).
+publishes the package to PyPI with trusted publishing (OIDC); see the
+[publishing guide](https://max-models.github.io/mpifield/development/publishing/).

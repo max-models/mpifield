@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 import scope_profiler as sp
+from maybempi import MPI
 
-from mpifield.main import main
+from mpifield import Field
+
+# the profiler gathers its results on rank 0 under MPI
+pytestmark = pytest.mark.skipif(
+    MPI.COMM_WORLD.Get_size() > 1, reason="serial: results are gathered on rank 0"
+)
 
 
 @pytest.fixture(autouse=True)
@@ -20,10 +27,14 @@ def _fresh_profiler(monkeypatch):
 def _region_names(**setup_kwargs) -> set[str]:
     sp.setup(output=None, **setup_kwargs)
     # an application region, recorded either way
+    field = Field(ndim=1, lower_bound=(0.0,), upper_bound=(1.0,), num_gridpoints=5)
     with sp.region("user.run"):
-        main()
+        field.scatter_linear(np.array([[0.3]]), 1.0)
     results = sp.finalize(verbose=False, return_results=True)
-    return set(results.region_names)
+    # "*" also enables the regions of the libraries below (cunumpy's kernels)
+    return {
+        name for name in results.region_names if name.startswith(("mpifield.", "user."))
+    }
 
 
 def test_regions_are_off_by_default() -> None:
@@ -32,4 +43,7 @@ def test_regions_are_off_by_default() -> None:
 
 @pytest.mark.parametrize("tags", [["mpifield"], ["*"]])
 def test_enabling_the_tag_records_the_regions(tags: list[str]) -> None:
-    assert _region_names(enable_tags=tags) == {"mpifield.main", "user.run"}
+    assert _region_names(enable_tags=tags) == {
+        "mpifield.Field.scatter_linear",
+        "user.run",
+    }
