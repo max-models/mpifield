@@ -7,15 +7,15 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- `setup_project.sh` also renames the docs smoke paths (`api/app/...` in `docs.yml`), so the
+- `setup_project.sh` also renames the docs smoke paths (`api/mpifield/...` in `docs.yml`), so the
   docs build of a new project no longer looks for the template's API pages.
 
 ### Added
 
 - Opt-in scope-profiler regions, as in plasmacoll, wellbalanced and patchwork: `_profiling.py`
-  with the package's tag (`template_python`, renamed by `setup_project.sh`), registered on
+  with the package's tag (`mpifield`, renamed by `setup_project.sh`), registered on
   import, and an example region on `main`. Off unless the application enables the tag (e.g.
-  `scope_profiler.setup(enable_tags=["template_python"])`). Adds the `scope-profiler>=0.7.5`
+  `scope_profiler.setup(enable_tags=["mpifield"])`). Adds the `scope-profiler>=0.7.5`
   dependency.
 - `PyPI dependencies` workflow and `scripts/check_pypi_dependencies.py`: on every pull request to
   `main`, fail if a dependency is a direct reference (`name @ git+https://...`), is not on PyPI, or
