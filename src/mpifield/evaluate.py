@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import cunumpy as xp
 import numpy as np
 
 if TYPE_CHECKING:
@@ -74,7 +75,8 @@ def evaluate_field(
     # Collective under MPI: every rank gathers the global field.
     data = np.asarray(field.to_numpy())
     grid_points = [
-        np.asarray(points, dtype=float) for points in field.get_grid_points()
+        np.asarray(xp.to_numpy(points), dtype=float)
+        for points in field.get_grid_points()
     ]
     lower = [float(bound) for bound in field.lower_bound]
     upper = [float(bound) for bound in field.upper_bound]
