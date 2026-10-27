@@ -36,7 +36,6 @@ from simgeometry.grid import Grid
 
 from mpifield._profiling import PROFILE_TAGS
 from mpifield._types import Array, Bounds, IndexLike, Kernel, PathLikeStr
-from mpifield.kernels.catalog import shared_memory_fits
 from mpifield.kernels.gather_linear_1d import kernel as gather_linear_1d
 from mpifield.kernels.gather_linear_1d.gather_linear_1d_numpy import (
     gather_linear_1d as gather_linear_1d_numpy,
@@ -1177,7 +1176,7 @@ class Field(Grid):
         args = (float(bounds_args.lower_bound[0]), float(grid_spacing[0]), nx)
         # the kernels deposit one component; on the GPU the grid is in shared memory
         if num_components == 1 and (
-            shared_memory_fits(nx)
+            xp.cuda.shared_memory_fits(nx)
             if xp.is_gpu(array)
             else _kernels_take(array, points, values)
         ):

@@ -2,7 +2,7 @@
 
 Every kernel ``<name>`` lives in its own folder::
 
-    mpifield/kernels/<name>/__init__.py        kernel = xp.kernels.Kernel.from_folder(...)
+    mpifield/kernels/<name>/__init__.py        kernel = KERNEL_PACKAGE.from_folder(__name__)
     mpifield/kernels/<name>/<name>_pyccel.py   def <name>(...)               CPU, compiled with Pyccel
     mpifield/kernels/<name>/<name>_cuda.cu     __global__ void <name>(...)   GPU, compiled with NVRTC
     mpifield/kernels/<name>/<name>_numpy.py    def <name>(...)               CPU, when Pyccel is unavailable
@@ -17,10 +17,10 @@ All versions take the same arguments, so a call site is the same on every device
 runs the CUDA version when the arrays live on the GPU (CuPy) and the compiled Pyccel
 version otherwise (``dispatch="arrays"``). The kernel object is a
 :class:`cunumpy.kernels.Kernel`, built in the folder's ``__init__.py`` by
-:meth:`cunumpy.kernels.Kernel.from_folder` with the options of
-:mod:`mpifield.kernels._build`. Both versions are compiled on first use: importing
-this module needs neither Pyccel nor CuPy. CUDA sources include mpifield's header
-relative to the source root: ``#include "mpifield/kernels/linear_cell.cuh"``.
+``KERNEL_PACKAGE.from_folder`` (see :mod:`mpifield.kernels`). Both versions are
+compiled on first use: importing this module needs neither Pyccel nor CuPy. CUDA
+sources include mpifield's header relative to the source root:
+``#include "mpifield/kernels/linear_cell.cuh"``.
 
 Marker arrays are component-major: positions ``(ndim, N)``, gather results and
 scatter values ``(ncomp, N)``. Grid fields are ``num_gridpoints + (ncomp,)``; the 3D
@@ -33,23 +33,9 @@ import importlib
 from collections.abc import Callable
 
 import cunumpy as xp
+from cunumpy.kernels import metal_available
 
-from mpifield.kernels._build import (
-    BLOCK_SIZE,
-    SHARED_MEMORY_PER_BLOCK,
-    shared_memory_fits,
-)
-from mpifield.kernels._metal import metal_available
-
-__all__ = [
-    "BLOCK_SIZE",
-    "KERNELS",
-    "KERNEL_NAMES",
-    "METAL_KERNEL_NAMES",
-    "SHARED_MEMORY_PER_BLOCK",
-    "metal_kernel",
-    "shared_memory_fits",
-]
+__all__ = ["KERNELS", "KERNEL_NAMES", "METAL_KERNEL_NAMES", "metal_kernel"]
 
 #: The kernels, by name.
 KERNEL_NAMES = (
