@@ -6,7 +6,7 @@ the host in float64; the kernels compute the cell and the weights in float32 wit
 ``quadratic_cell.cuh`` for the quadratic ones). A scatter accumulates
 into a zeroed float32 grid with float atomics (no 64-bit atomics on the Apple GPU),
 which the host adds to the caller's grid in float64: the summation order, hence the
-last bits, differ from the CPU. See :mod:`mpifield.kernels._metal`.
+last bits, differ from the CPU. See :mod:`mpifield.kernels`.
 """
 
 from __future__ import annotations
@@ -15,12 +15,11 @@ import cunumpy as xp
 import numpy as np
 
 from mpifield._types import Array
-from mpifield.kernels._metal import THREADGROUP, make_kernel
+from mpifield.kernels import KERNEL_PACKAGE
 
 __all__ = [
     "CELL_HEADER",
     "QUADRATIC_HEADER",
-    "make_kernel",
     "make_scatter_kernel",
     "relative",
     "scatter",
@@ -94,16 +93,8 @@ def make_scatter_kernel(
     name: str, source: str, inputs: list[str], header: str = ""
 ) -> xp.kernels.MetalKernel:
     """A kernel adding into the zeroed float32 output ``delta`` with float atomics."""
-    return xp.kernels.MetalKernel(
-        source,
-        inputs=inputs,
-        outputs=["delta"],
-        name=name,
-        header=header,
-        threadgroup=THREADGROUP,
-        float64="cast",
-        atomic_outputs=True,
-        init_value=0,
+    return KERNEL_PACKAGE.metal_kernel(
+        name, source, inputs, ["delta"], header=header, atomic_outputs=True
     )
 
 

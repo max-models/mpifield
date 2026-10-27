@@ -8,7 +8,8 @@ arguments. One thread per marker (``positions`` ``(3, N)``, ``result``
 from __future__ import annotations
 
 from mpifield._types import Array
-from mpifield.kernels._metal_grid import QUADRATIC_HEADER, make_kernel, relative
+from mpifield.kernels import KERNEL_PACKAGE
+from mpifield.kernels._metal_grid import QUADRATIC_HEADER, relative
 
 _SOURCE = """
     uint marker = thread_position_in_grid.x;
@@ -35,7 +36,7 @@ _SOURCE = """
     }
 """
 
-_KERNEL = make_kernel(
+_KERNEL = KERNEL_PACKAGE.metal_kernel(
     "mpifield_gather_quadratic_3d",
     _SOURCE,
     inputs=["rel", "field", "grid"],

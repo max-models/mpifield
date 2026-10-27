@@ -920,7 +920,7 @@ wheels = [
 [[package]]
 name = "cunumpy"
 version = "0.7.1"
-source = { git = "https://github.com/max-models/cunumpy?branch=devel#18c7c2fbef68a73a32029981662213b73f1d2a21" }
+source = { git = "https://github.com/max-models/cunumpy?branch=devel#92b38a5a0e00d7ccf03aa39849d6c7eaee946859" }
 dependencies = [
     { name = "array-api-compat" },
     { name = "maybempi" },

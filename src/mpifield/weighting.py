@@ -44,7 +44,6 @@ from typing import Any
 import cunumpy as xp
 
 from mpifield._types import Array, BlockGrid
-from mpifield.kernels.catalog import shared_memory_fits
 from mpifield.kernels.gather_linear_1d import kernel as gather_linear_1d
 from mpifield.kernels.gather_linear_2d import kernel as gather_linear_2d
 from mpifield.kernels.gather_linear_3d import kernel as gather_linear_3d
@@ -183,7 +182,7 @@ def _scatter_linear_1d(
     """
     args = (lower_x, cell_size_x, num_x, periodic_x)
     gpu = xp.is_gpu(field)
-    if gpu and not shared_memory_fits(num_x):
+    if gpu and not xp.cuda.shared_memory_fits(num_x):
         for component in range(field.shape[1]):
             scatter_linear_1d_numpy(
                 positions[0], values[component], field[:, component], *args

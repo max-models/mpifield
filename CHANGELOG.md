@@ -5,6 +5,13 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- The kernels are built with cunumpy's `KernelPackage` (`mpifield.kernels.KERNEL_PACKAGE`):
+  `kernels/_build.py`, `kernels/_metal.py` and `kernels/compile.py` are gone, and the build
+  cache is still `MPIFIELD_KERNEL_CACHE`. `shared_memory_fits` is
+  `xp.cuda.shared_memory_fits`; the catalog no longer exports it.
+
 ### Added
 
 - `Field`, moved out of picnic (`picnic.field`): a field on the nodes of a uniform 1D, 2D or

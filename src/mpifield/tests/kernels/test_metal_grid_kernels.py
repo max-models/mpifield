@@ -11,8 +11,8 @@ import importlib
 
 import numpy as np
 import pytest
+from cunumpy.kernels import metal_available
 
-from mpifield.kernels._metal import metal_available
 from mpifield.kernels.catalog import KERNELS
 
 pytestmark = pytest.mark.skipif(
