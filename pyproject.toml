@@ -23,7 +23,7 @@ classifiers = [
 # PyPI rejects direct references (name @ git+...), so only version ranges go here; the
 # max-models packages come from their devel branches through [tool.uv.sources]
 dependencies = [
-  "cunumpy>=0.7",
+  "cunumpy>=0.7.2",
   # MPI only under an MPI launcher (mpirun, srun); a serial stand-in for mpi4py otherwise
   "maybempi>=0.1.2",
   "mpiarray>=0.2.1",

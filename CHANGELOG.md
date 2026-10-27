@@ -11,6 +11,8 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `kernels/_build.py`, `kernels/_metal.py` and `kernels/compile.py` are gone, and the build
   cache is still `MPIFIELD_KERNEL_CACHE`. `shared_memory_fits` is
   `xp.cuda.shared_memory_fits`; the catalog no longer exports it.
+- Needs `cunumpy>=0.7.2`, the first release with `KernelPackage` (was `>=0.7`, with which
+  `import mpifield` failed on cunumpy 0.7.0 and 0.7.1).
 
 ### Added
 
