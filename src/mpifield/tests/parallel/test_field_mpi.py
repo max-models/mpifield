@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from maybempi import MPI
 
-from mpifield import Field
+from mpifield import LINEAR, QUADRATIC, Field
 
 # mpirun -n 2 python src/mpifield/tests/parallel/test_field_mpi.py
 # mpirun -n 2 pytest src/mpifield/tests/parallel/test_field_mpi.py --with-mpi
@@ -368,7 +368,7 @@ def test_deposit_then_exchange_halos_equals_the_serial_deposit() -> None:
     values = rng.uniform(0.5, 1.5, 2000)
     kwargs = {"ndim": 2, "lower_bound": (0.0, 0.0), "upper_bound": (1.0, 1.0)}
     serial = Field(num_gridpoints=(21, 17), **kwargs)
-    serial.scatter_linear(positions, values)
+    serial.scatter(positions, values)
 
     field = Field(
         num_gridpoints=(21, 17),
@@ -386,11 +386,117 @@ def test_deposit_then_exchange_halos_equals_the_serial_deposit() -> None:
     mine = (positions[0] >= lower) & (
         (positions[0] <= upper) if is_last else (positions[0] < upper)
     )
-    field.scatter_linear(np.ascontiguousarray(positions[:, mine]), values[None, mine])
+    field.scatter(np.ascontiguousarray(positions[:, mine]), values[None, mine])
     field.exchange_halos()
 
     np.testing.assert_allclose(field.to_numpy(), serial.to_numpy(), rtol=1e-12)
     assert comm.allreduce(int(mine.sum())) == 2000
+
+
+def _own_markers(field: Field, positions: np.ndarray) -> np.ndarray:
+    """Which markers lie in this rank's cells: from its first node to the next rank's.
+
+    The first and last rank of a bounded axis also take the markers beyond the
+    domain edge, which deposit on the edge nodes as on an unsplit field.
+    """
+    mine = np.ones(positions.shape[1], dtype=bool)
+    spacing = np.asarray(xp.to_numpy(field.grid_spacing))
+    lower_bound = np.asarray(xp.to_numpy(field.lower_bound))
+    periodic = field.periodic if field.periodic is not None else (False,) * field.ndim
+    for axis in range(field.ndim):
+        start, stop = field.proc_index_bounds[axis]
+        x = positions[axis]
+        lower = lower_bound[axis] + start * spacing[axis]
+        upper = lower_bound[axis] + stop * spacing[axis]
+        bounded = not periodic[axis]
+        above = (x >= lower) | (bounded and start == 0)
+        last = stop == field.num_gridpoints[axis]
+        below = (x < upper) | (bounded and last)
+        mine &= above & below
+    return mine
+
+
+@pytest.mark.parametrize(
+    ("decomposition", "periodic"),
+    [
+        ([True, False], (False, False)),
+        ([True, False], (True, False)),
+        ([True, True], (False, True)),
+    ],
+)
+@pytest.mark.parametrize("weighting", [LINEAR, QUADRATIC], ids=lambda w: w.name)
+def test_split_deposit_and_gather_equal_the_serial_ones(
+    weighting, decomposition, periodic
+) -> None:
+    """Each rank deposits and gathers at its own markers, also near the domain edges.
+
+    After the halo exchange the deposit is the serial one: no charge is lost in
+    the halo nodes beyond a bounded edge, where a quadratic stencil reaches.
+    After filling the halos each rank's gather is the serial one.
+    """
+    comm = MPI.COMM_WORLD
+    rng = np.random.default_rng(14)
+    positions = rng.uniform(-0.05, 1.05, (2, 3000))
+    positions[:, :40] = rng.uniform(0.0, 0.02, (2, 40))  # by the lower edges
+    for axis, flag in enumerate(periodic):
+        if flag:
+            positions[axis] %= 1.0
+    values = rng.uniform(0.5, 1.5, (2, 3000))
+    kwargs = {
+        "ndim": 2,
+        "lower_bound": (0.0, 0.0),
+        "upper_bound": (1.0, 1.0),
+        "num_gridpoints": (24, 20),
+        "num_components": 2,
+        "periodic": periodic,
+    }
+    serial = Field(**kwargs)
+    serial.scatter(positions, values, weighting)
+
+    field = Field(
+        comm=comm,
+        domain_decomposition=decomposition,
+        num_ghost_points=weighting.halo,
+        **kwargs,
+    )
+    mine = _own_markers(field, positions)
+    assert comm.allreduce(int(mine.sum())) == positions.shape[1]
+    own = np.ascontiguousarray(positions[:, mine])
+    field.scatter(own, np.ascontiguousarray(values[:, mine]), weighting)
+    field.exchange_halos()
+    np.testing.assert_allclose(field.to_numpy(), serial.to_numpy(), rtol=1e-12)
+
+    potential = np.sin(3 * np.arange(24))[:, None, None] + np.cos(np.arange(20))[
+        None, :, None
+    ] * np.array([1.0, -2.0])
+    serial.set_field_data(potential)
+    field.set_field_data(potential)
+    field.fill_halos()
+    np.testing.assert_allclose(
+        np.asarray(xp.to_numpy(field.gather(own, weighting))),
+        np.asarray(xp.to_numpy(serial.gather(own, weighting))),
+        rtol=1e-12,
+        atol=1e-12,
+    )
+
+
+@pytest.mark.mpi(min_size=2)
+def test_a_weighting_wider_than_the_halo_raises() -> None:
+    field = Field(
+        ndim=2,
+        lower_bound=(0.0, 0.0),
+        upper_bound=(1.0, 1.0),
+        num_gridpoints=(24, 20),
+        comm=MPI.COMM_WORLD,
+        domain_decomposition=[True, False],
+        num_ghost_points=1,
+    )
+    positions = np.full((2, 1), 0.5)
+    field.scatter(positions, 1.0)  # linear needs one halo node
+    with pytest.raises(ValueError, match="num_ghost_points >= 2"):
+        field.scatter(positions, 1.0, QUADRATIC)
+    with pytest.raises(ValueError, match="num_ghost_points >= 2"):
+        field.gather(positions, QUADRATIC)
 
 
 def test_export_and_load_under_mpi(tmp_path_factory: pytest.TempPathFactory) -> None:

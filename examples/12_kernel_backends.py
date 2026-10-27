@@ -43,11 +43,9 @@ for c, count in enumerate(counts):
     for i, implementation in enumerate(("pyccel", "numpy")):
         with xp.kernels.use_host_kernel_implementation(implementation):
             field = Field(num_gridpoints=(257, 257), **kwargs)
-            field.scatter_linear(positions, values)  # compile and warm up
-            times[i, 0, c] = (
-                best(partial(field.scatter_linear, positions, values)) / count
-            )
-            times[i, 1, c] = best(partial(field.interpolate_field, positions)) / count
+            field.scatter(positions, values)  # compile and warm up
+            times[i, 0, c] = best(partial(field.scatter, positions, values)) / count
+            times[i, 1, c] = best(partial(field.gather, positions)) / count
 
 per_marker = xr.DataArray(
     times * 1e9,

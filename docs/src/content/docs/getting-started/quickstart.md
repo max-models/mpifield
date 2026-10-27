@@ -29,12 +29,12 @@ Positions are component-major, `(ndim, N)`; values `(ncomp, N)`.
 ```python
 positions = np.random.default_rng(0).random((2, 10_000)) * [[0.1], [0.05]]
 
-field_at_markers = E.interpolate_field(positions)  # (2, N), the linear gather
+field_at_markers = E.gather(positions)  # (2, N), the linear gather
 
 density = Field(
     ndim=2, lower_bound=(0.0, 0.0), upper_bound=(0.1, 0.05), num_gridpoints=(101, 51)
 )
-density.scatter_linear(positions, np.ones((1, 10_000)))  # the cloud-in-cell deposit
+density.scatter(positions, np.ones((1, 10_000)))  # the cloud-in-cell deposit
 print(density.sum())  # 10000.0: the deposit conserves the total
 ```
 
@@ -74,7 +74,7 @@ See the [MPI tutorial](/mpifield/tutorials/mpi-and-halos/), and the
 
 ## Profiling
 
-mpifield's coarse operations (`mpifield.Field.interpolate_field`, `scatter_linear`, `smooth`,
+mpifield's coarse operations (`mpifield.Field.gather`, `scatter`, `smooth`,
 `gradient`) are [scope-profiler](https://github.com/max-models/scope-profiler) regions with
 the opt-in tag `mpifield`: off by default, they cost a fraction of a microsecond per call.
 Turn them on with `scope_profiler.setup(enable_tags=["mpifield"])`,

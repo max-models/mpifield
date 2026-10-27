@@ -19,7 +19,7 @@ import numpy as np
 import pytest
 
 import mpifield
-from mpifield import Bounds, Field
+from mpifield import LINEAR, QUADRATIC, BlockGrid
 from mpifield.kernels.catalog import KERNELS
 
 COMPILER = shutil.which("c++")
@@ -126,8 +126,9 @@ def _run(tmp_path, kernel, arrays, views, call, outputs):
     return results
 
 
+@pytest.mark.parametrize("periodic", [0, 1])
 @pytest.mark.parametrize("nx", [5, 65, 256])
-def test_1d_deposit_grid_stride_and_zero_weights(tmp_path, nx):
+def test_1d_deposit_grid_stride_and_zero_weights(tmp_path, nx, periodic):
     """Blocks process multiple markers and skip invalid inactive positions."""
     from mpifield.kernels.scatter_linear_1d.scatter_linear_1d_numpy import (
         scatter_linear_1d,
@@ -141,7 +142,9 @@ def test_1d_deposit_grid_stride_and_zero_weights(tmp_path, nx):
     initial = rng.normal(size=nx)
     expected = initial.copy()
     active = values != 0.0
-    scatter_linear_1d(positions[active], values[active], expected, 0.0, 1.0 / nx, nx)
+    scatter_linear_1d(
+        positions[active], values[active], expected, 0.0, 1.0 / nx, nx, periodic
+    )
     (actual,) = _run(
         tmp_path,
         KERNELS["scatter_linear_1d"].cuda_kernel,
@@ -149,7 +152,8 @@ def test_1d_deposit_grid_stride_and_zero_weights(tmp_path, nx):
         {"positions": 1, "values": 1, "field": 1},
         (
             7,
-            f"scatter_linear_1d(positions_view, values_view, field_view, 0.0, {1.0 / nx!r}, {nx})",
+            "scatter_linear_1d(positions_view, values_view, field_view, "
+            f"0.0, {1.0 / nx!r}, {nx}, {periodic})",
         ),
         ["field"],
     )
@@ -171,11 +175,16 @@ def _grid_case(seed):
         "n": n,
         "lower": lower,
         "spacing": spacing,
-        "bounds": Bounds(lower_bound=lower, upper_bound=upper),
         "points": points,
         "values": rng.normal(size=(ncomp, n)),
         "field": rng.normal(size=(nx, ny, ncomp)),
     }
+
+
+def _block(case, periodic):
+    return BlockGrid.from_geometry(
+        case["lower"], case["spacing"], (case["nx"], case["ny"]), periodic
+    )
 
 
 def _geometry_args(case, periodic):
@@ -200,14 +209,11 @@ def test_scatter_linear_3d_matches_cpu_kernel(tmp_path, periodic):
     values = rng.normal(size=(ncomp, n))
     expected = np.zeros((*shape, ncomp))
     with xp.kernels.use_host_kernel_implementation("numpy"):  # the CPU reference
-        Field.scatter_kernel_3d(
+        LINEAR.scatter_block(
             points,
             values,
-            Bounds(lower_bound=lower, upper_bound=upper),
-            spacing,
-            np.array(shape),
             expected,
-            periodic,
+            BlockGrid.from_geometry(lower, spacing, shape, periodic),
         )
     arrays = {
         "positions": points,
@@ -245,14 +251,8 @@ PERIODIC = [(False, False), (True, False), (False, True), (True, True)]
 def test_scatter_linear_2d_matches_cpu_kernel(tmp_path, periodic):
     case = _grid_case(1)
     expected = np.zeros_like(case["field"])
-    Field.scatter_kernel_2d(
-        case["points"],
-        case["values"],
-        case["bounds"],
-        case["spacing"],
-        np.array([case["nx"], case["ny"]]),
-        expected,
-        periodic,
+    LINEAR.scatter_block(
+        case["points"], case["values"], expected, _block(case, periodic)
     )
     arrays = {
         "positions": case["points"],
@@ -280,15 +280,7 @@ def test_scatter_linear_2d_matches_cpu_kernel(tmp_path, periodic):
 def test_gather_linear_2d_matches_cpu_kernel(tmp_path, periodic):
     case = _grid_case(2)
     expected = np.zeros((case["ncomp"], case["n"]))  # (components, N)
-    Field.interpolate_field_2d(
-        case["points"],
-        case["field"],
-        case["bounds"],
-        case["spacing"],
-        np.array([case["nx"], case["ny"]]),
-        expected,
-        periodic,
-    )
+    LINEAR.gather_block(case["points"], case["field"], expected, _block(case, periodic))
     arrays = {
         "positions": case["points"],
         "field": case["field"],
@@ -318,13 +310,8 @@ def test_gather_linear_1d_matches_cpu_kernel(tmp_path):
     points = rng.uniform(lower - 0.4, lower + nx * dx + 0.4, (1, n))  # some outside
     field = rng.normal(size=(nx, ncomp))
     expected = np.zeros((ncomp, n))  # (components, N)
-    Field.interpolate_field_1d(
-        points,
-        field,
-        Bounds(lower_bound=np.array([lower]), upper_bound=np.array([lower + nx * dx])),
-        np.array([dx]),
-        np.array([nx]),
-        expected,
+    LINEAR.gather_block(
+        points, field, expected, BlockGrid.from_geometry((lower,), (dx,), (nx,))
     )
     arrays = {"positions": points, "field": field, "result": np.zeros_like(expected)}
     call = (
@@ -356,14 +343,11 @@ def test_gather_linear_3d_matches_cpu_kernel(tmp_path, periodic):
     points = rng.uniform(lower - 0.2, upper + 0.2, (n, 3)).T.copy()  # (3, N)
     field = rng.normal(size=(*shape, ncomp))
     expected = np.zeros((ncomp, n))  # (components, N)
-    Field.interpolate_field_3d(
+    LINEAR.gather_block(
         points,
         field,
-        Bounds(lower_bound=lower, upper_bound=upper),
-        spacing,
-        np.array(shape),
         expected,
-        periodic,
+        BlockGrid.from_geometry(lower, spacing, shape, periodic),
     )
     flat = np.ascontiguousarray(field.reshape(-1, ncomp))
     arrays = {"positions": points, "field": flat, "result": np.zeros_like(expected)}
@@ -379,6 +363,109 @@ def test_gather_linear_3d_matches_cpu_kernel(tmp_path, periodic):
         KERNELS["gather_linear_3d"].cuda_kernel,
         arrays,
         {"positions": 2, "field": 2, "result": 2},
+        call,
+        ["result"],
+    )
+    np.testing.assert_allclose(result, expected, rtol=1e-12, atol=1e-14)
+
+
+QUADRATIC_CASES = [
+    (1, (False,)),
+    (1, (True,)),
+    (2, (False, False)),
+    (2, (True, False)),
+    (2, (True, True)),
+    (3, (False, False, False)),
+    (3, (True, False, True)),
+    (3, (True, True, True)),
+]
+
+
+def _quadratic_case(ndim, seed):
+    """A grid of ``ndim`` axes, two components and markers partly outside it."""
+    rng = np.random.default_rng(seed)
+    shape, ncomp, n = (6, 5, 4)[:ndim], 2, 150
+    lower = np.array([0.0, -1.0, 2.0])[:ndim]
+    spacing = np.array([0.25, 0.5, 0.1])[:ndim]
+    upper = lower + spacing * np.array(shape)
+    points = rng.uniform(lower - 0.3, upper + 0.3, (n, ndim)).T.copy()  # (ndim, N)
+    geometry = ", ".join(
+        [repr(float(v)) for v in lower]
+        + [repr(float(v)) for v in spacing]
+        + [str(v) for v in shape]
+    )
+    return {
+        "shape": shape,
+        "ncomp": ncomp,
+        "n": n,
+        "lower": lower,
+        "spacing": spacing,
+        "points": points,
+        "values": rng.normal(size=(ncomp, n)),
+        "field": rng.normal(size=(*shape, ncomp)),
+        "geometry": geometry,
+    }
+
+
+@pytest.mark.parametrize(("ndim", "periodic"), QUADRATIC_CASES)
+def test_scatter_quadratic_matches_cpu_kernel(tmp_path, ndim, periodic):
+    case = _quadratic_case(ndim, 8)
+    case["values"][:, ::7] = 0.0
+    case["points"][:, ::7] = np.nan  # dead markers may sit anywhere
+    grid = BlockGrid.from_geometry(
+        case["lower"], case["spacing"], case["shape"], periodic
+    )
+    expected = np.zeros_like(case["field"])
+    with xp.kernels.use_host_kernel_implementation("numpy"):  # the CPU reference
+        QUADRATIC.scatter_block(case["points"], case["values"], expected, grid)
+    name = f"scatter_quadratic_{ndim}d"
+    flags = ", ".join(str(int(p)) for p in periodic)
+    call = (
+        case["n"],
+        f"{name}(positions_view, values_view, field_view, {case['geometry']}, {flags})",
+    )
+    (result,) = _run(
+        tmp_path,
+        KERNELS[name].cuda_kernel,
+        {
+            "positions": case["points"],
+            "values": case["values"],
+            "field": np.zeros_like(case["field"]),
+        },
+        {"positions": 2, "values": 2, "field": ndim + 1},
+        call,
+        ["field"],
+    )
+    np.testing.assert_allclose(result, expected, rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(  # all the charge is on the grid
+        result.reshape(-1, case["ncomp"]).sum(axis=0), case["values"].sum(axis=1)
+    )
+
+
+@pytest.mark.parametrize(("ndim", "periodic"), QUADRATIC_CASES)
+def test_gather_quadratic_matches_cpu_kernel(tmp_path, ndim, periodic):
+    case = _quadratic_case(ndim, 9)
+    grid = BlockGrid.from_geometry(
+        case["lower"], case["spacing"], case["shape"], periodic
+    )
+    expected = np.zeros((case["ncomp"], case["n"]))  # (components, N)
+    with xp.kernels.use_host_kernel_implementation("numpy"):
+        QUADRATIC.gather_block(case["points"], case["field"], expected, grid)
+    name = f"gather_quadratic_{ndim}d"
+    flags = ", ".join(str(int(p)) for p in periodic)
+    call = (
+        case["n"],
+        f"{name}(positions_view, field_view, result_view, {case['geometry']}, {flags})",
+    )
+    (result,) = _run(
+        tmp_path,
+        KERNELS[name].cuda_kernel,
+        {
+            "positions": case["points"],
+            "field": case["field"],
+            "result": np.zeros_like(expected),
+        },
+        {"positions": 2, "field": ndim + 1, "result": 2},
         call,
         ["result"],
     )

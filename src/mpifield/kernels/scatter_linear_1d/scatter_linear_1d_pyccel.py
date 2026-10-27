@@ -27,25 +27,38 @@ def _scatter_chunk_1d(
     lower_x: float,
     cell_size: float,
     num_gridpoints: int,
+    periodic_x: int,
 ) -> None:
     """Deposit the markers ``first`` to ``last`` into the nodes ``offset`` onward of ``buffer``."""
     # comparisons instead of min/max, which Pyccel turns into variadic C
     # functions that the compiler cannot inline
     for marker in range(first, last):
+        # a zero-weight marker (a dead one left in storage) deposits nothing,
+        # whatever its position
+        if values[marker] == 0.0:
+            continue
         relative_x = (positions[marker] - lower_x) / cell_size
-        left = int(relative_x)
-        if left < 0:
-            left = 0
-        if left > num_gridpoints - 1:
-            left = num_gridpoints - 1
+        if periodic_x == 1:
+            if not (relative_x >= 0.0 and relative_x < num_gridpoints):
+                relative_x = relative_x - num_gridpoints * (
+                    relative_x // num_gridpoints
+                )
+            left = int(relative_x)
+            if left >= num_gridpoints:
+                left = num_gridpoints - 1
+            right = left + 1
+            if right == num_gridpoints:
+                right = 0
+        else:
+            left = int(relative_x) if relative_x >= 0.0 else 0
+            if left > num_gridpoints - 2:
+                left = num_gridpoints - 2
+            right = left + 1
         fraction = relative_x - left
         if fraction < 0.0:
             fraction = 0.0
         if fraction > 1.0:
             fraction = 1.0
-        right = left + 1
-        if right == num_gridpoints:
-            right = 0
         buffer[offset + left] += (1.0 - fraction) * values[marker]
         buffer[offset + right] += fraction * values[marker]
 
@@ -57,10 +70,13 @@ def scatter_linear_1d(
     lower_x: float,
     cell_size: float,
     num_gridpoints: int,
+    periodic_x: int,
 ) -> None:
     """Deposit scalar marker values onto a 1D grid with linear weights.
 
-    The right neighbour of the last node is the first node (periodic layout).
+    On a periodic axis (``periodic_x`` 1) the right neighbour of the last node is
+    the first node and positions wrap into the period; on a bounded one a marker
+    outside the grid uses the edge cell, its weight clamped to [0, 1].
     """
     num_markers = positions.shape[0]
     num_threads = int(omp_get_max_threads())
@@ -79,6 +95,7 @@ def scatter_linear_1d(
             lower_x,
             cell_size,
             num_gridpoints,
+            periodic_x,
         )
     else:
         buffer = np.zeros(num_threads * num_gridpoints)
@@ -99,6 +116,7 @@ def scatter_linear_1d(
             lower_x,
             cell_size,
             num_gridpoints,
+            periodic_x,
         )
         # fmt: off
         #$ omp end parallel

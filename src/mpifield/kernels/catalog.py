@@ -22,9 +22,15 @@ compiled on first use: importing this module needs neither Pyccel nor CuPy. CUDA
 sources include mpifield's header relative to the source root:
 ``#include "mpifield/kernels/linear_cell.cuh"``.
 
+The kernels are the linear (``*_linear_*``) and quadratic (``*_quadratic_*``) deposits
+and gathers of :mod:`mpifield.weighting`. The quadratic ones, and the 1D and 2D linear
+gathers and the 2D linear deposit, take the arguments of the weighting kernel
+convention; the linear 1D deposit takes one component (``(N,)`` markers, an ``(nx,)``
+grid) and the linear 3D kernels the grid as rows ``(nx * ny * nz, ncomp)``.
+
 Marker arrays are component-major: positions ``(ndim, N)``, gather results and
-scatter values ``(ncomp, N)``. Grid fields are ``num_gridpoints + (ncomp,)``; the 3D
-kernels take them flattened to ``(nx * ny * nz, ncomp)`` rows.
+scatter values ``(ncomp, N)``. Grid fields are ``num_gridpoints + (ncomp,)``; the linear
+3D kernels take them flattened to ``(nx * ny * nz, ncomp)`` rows.
 """
 
 from __future__ import annotations
@@ -45,6 +51,12 @@ KERNEL_NAMES = (
     "scatter_linear_1d",
     "scatter_linear_2d",
     "scatter_linear_3d",
+    "gather_quadratic_1d",
+    "gather_quadratic_2d",
+    "gather_quadratic_3d",
+    "scatter_quadratic_1d",
+    "scatter_quadratic_2d",
+    "scatter_quadratic_3d",
 )
 
 _PACKAGE = __name__.rpartition(".")[0]

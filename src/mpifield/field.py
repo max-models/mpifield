@@ -1,14 +1,15 @@
-"""A field on the nodes of a uniform grid, split over MPI ranks, with linear gather and scatter.
+"""A field on the nodes of a uniform grid, split over MPI ranks, with gather and scatter.
 
 :class:`Field` is a :class:`simgeometry.grid.Grid` holding an
 :class:`mpiarray.DistributedArray` of shape ``num_gridpoints + (num_components,)``:
 the grid axes are split over the ranks' process grid with ``num_ghost_points`` halo
 nodes, the component axis is never split. On it:
 
-- :meth:`Field.interpolate_field` gathers the field at marker positions and
-  :meth:`Field.scatter_linear` deposits marker values onto the nodes, both with linear
-  (cloud-in-cell) weights through the compiled kernels of :mod:`mpifield.kernels`
-  (Pyccel on the CPU, CUDA for CuPy arrays, a NumPy fallback);
+- :meth:`Field.gather` interpolates the field at marker positions and
+  :meth:`Field.scatter` deposits marker values onto the nodes, both with a
+  :class:`~mpifield.weighting.Weighting` (linear cloud-in-cell by default, or
+  quadratic, or one of your own) through compiled kernels (Pyccel on the CPU, CUDA
+  for CuPy arrays, a NumPy fallback);
 - elementwise arithmetic and NumPy ufuncs return new fields; ``sum``, ``min``, ...
   reduce over all ranks;
 - :meth:`Field.evaluate` returns the field, or a line or plane of it, as an
@@ -22,8 +23,7 @@ from __future__ import annotations
 
 import math
 import operator
-from functools import partial
-from typing import TYPE_CHECKING, Any, Literal, NamedTuple, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import cunumpy as xp
 import mpiarray as mpa
@@ -31,35 +31,11 @@ import numpy as np
 import scope_profiler as sp
 from maybempi import MPI
 from mpiarray import DistributedArray
-from numpy import ndarray
 from simgeometry.grid import Grid
 
 from mpifield._profiling import PROFILE_TAGS
-from mpifield._types import Array, Bounds, IndexLike, Kernel, PathLikeStr
-from mpifield.kernels.gather_linear_1d import kernel as gather_linear_1d
-from mpifield.kernels.gather_linear_1d.gather_linear_1d_numpy import (
-    gather_linear_1d as gather_linear_1d_numpy,
-)
-from mpifield.kernels.gather_linear_2d import kernel as gather_linear_2d
-from mpifield.kernels.gather_linear_2d.gather_linear_2d_numpy import (
-    gather_linear_2d as gather_linear_2d_numpy,
-)
-from mpifield.kernels.gather_linear_3d import kernel as gather_linear_3d
-from mpifield.kernels.gather_linear_3d.gather_linear_3d_numpy import (
-    gather_linear_3d as gather_linear_3d_numpy,
-)
-from mpifield.kernels.scatter_linear_1d import kernel as scatter_linear_1d
-from mpifield.kernels.scatter_linear_1d.scatter_linear_1d_numpy import (
-    scatter_linear_1d as scatter_linear_1d_numpy,
-)
-from mpifield.kernels.scatter_linear_2d import kernel as scatter_linear_2d
-from mpifield.kernels.scatter_linear_2d.scatter_linear_2d_numpy import (
-    scatter_linear_2d as scatter_linear_2d_numpy,
-)
-from mpifield.kernels.scatter_linear_3d import kernel as scatter_linear_3d
-from mpifield.kernels.scatter_linear_3d.scatter_linear_3d_numpy import (
-    scatter_linear_3d as scatter_linear_3d_numpy,
-)
+from mpifield._types import Array, BlockGrid, Bounds, IndexLike, PathLikeStr
+from mpifield.weighting import LINEAR, Weighting
 
 if TYPE_CHECKING:
     import xarray as xr
@@ -68,46 +44,6 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
 __all__ = ["BlockGrid", "Field"]
-
-
-class BlockGrid(NamedTuple):
-    """The grid of one rank's stored block, as the kernels see it (:meth:`Field.block_grid`)."""
-
-    bounds: Bounds
-    grid_spacing: Array
-    num_gridpoints: Array
-    periodic: tuple[bool, ...]
-
-
-def _kernels_take(grid: Array, *arrays: Array) -> bool:
-    """Whether the compiled kernels take these arrays.
-
-    They do for a CuPy ``grid`` (the other arrays are moved to the GPU) and for
-    NumPy arrays only; anything else goes through the NumPy versions directly.
-    """
-    return xp.is_gpu(grid) or all(
-        isinstance(array, np.ndarray) for array in (grid, *arrays)
-    )
-
-
-def _grid_geometry(
-    bounds_args: Bounds, grid_spacing: Array, num_gridpoints: Array, ndim: int
-) -> tuple[float | int, ...]:
-    """Lower bounds, cell sizes and node counts as Python scalars, for the kernels."""
-    return (
-        *(float(bounds_args.lower_bound[d]) for d in range(ndim)),
-        *(float(grid_spacing[d]) for d in range(ndim)),
-        *(int(num_gridpoints[d]) for d in range(ndim)),
-    )
-
-
-def _gather(
-    kernel: xp.kernels.Kernel, points: Array, grid: Array, result_out: Array, *args: Any
-) -> None:
-    """Run a gather kernel on the device of ``grid``, filling ``result_out``."""
-    convert = partial(xp.kernels.as_kernel_array, like=grid, dtype=float, strided=True)
-    with xp.kernels.kernel_output(result_out, like=grid, dtype=float) as result:
-        kernel(convert(points), convert(grid), result, *args)
 
 
 def _periodic_flags(periodic: object, ndim: int) -> tuple[bool, ...]:
@@ -137,7 +73,7 @@ class Field(Grid):
     --------
     >>> phi = Field(ndim=2, lower_bound=(0, 0), upper_bound=(1, 1), num_gridpoints=33)
     >>> phi.set_field_data(np.zeros((33, 33)))
-    >>> values = phi.interpolate_field(np.array([[0.5], [0.25]]))  # (1, 1)
+    >>> values = phi.gather(np.array([[0.5], [0.25]]))  # (1, 1)
     """
 
     __array_priority__ = 1000
@@ -209,28 +145,42 @@ class Field(Grid):
             layout=self._layout(num_components, self._periodic_for_darray()),
         )
 
-    def _make_block_grid(self, layout: mpa.Layout, cpu: bool) -> BlockGrid:
+    def _make_block_grid(
+        self, layout: mpa.Layout, cpu: bool, inside_domain: bool
+    ) -> BlockGrid:
         """Compute :meth:`block_grid`."""
         ndim = self.ndim
         halo = layout.halo[:ndim]
+        flags = _periodic_flags(self.periodic, ndim)
+        first, last = [], []  # the stored nodes the grid starts and ends with
+        for axis in range(ndim):
+            start = layout.index_bounds[axis][0]
+            owned = layout.local_shape[axis]
+            h = halo[axis]
+            # the halo nodes beyond a bounded edge of the domain are outside it
+            trim = inside_domain and not flags[axis]
+            low = h if trim and start == 0 else 0
+            high = h if trim and start + owned == self.num_gridpoints[axis] else 0
+            first.append(low)
+            last.append(owned + 2 * h - high)
         spacing = np.asarray(xp.to_numpy(self.grid_spacing), dtype=float)
         start = np.array(
             [
-                bounds[0] - h
-                for bounds, h in zip(layout.index_bounds[:ndim], halo, strict=True)
+                bounds[0] - h + low
+                for bounds, h, low in zip(
+                    layout.index_bounds[:ndim], halo, first, strict=True
+                )
             ],
             dtype=float,
         )
         num_gridpoints = np.array(
-            [n + 2 * h for n, h in zip(layout.local_shape[:ndim], halo, strict=True)],
-            dtype=int,
+            [stop - low for low, stop in zip(first, last, strict=True)], dtype=int
         )
         lower = np.asarray(xp.to_numpy(self.bounds.lower_bound), dtype=float)
         lower = lower + start * spacing
         upper = lower + (num_gridpoints - 1) * spacing
         periodic = tuple(
-            bool(flag) and h == 0
-            for flag, h in zip(_periodic_flags(self.periodic, ndim), halo, strict=True)
+            bool(flag) and h == 0 for flag, h in zip(flags, halo, strict=True)
         )
         convert = np.asarray if cpu else xp.asarray
         return BlockGrid(
@@ -238,9 +188,18 @@ class Field(Grid):
             grid_spacing=convert(spacing),
             num_gridpoints=num_gridpoints if cpu else xp.asarray(num_gridpoints),
             periodic=periodic,
+            geometry=(
+                *(float(v) for v in lower),
+                *(float(v) for v in spacing),
+                *(int(n) for n in num_gridpoints),
+                *(int(flag) for flag in periodic),
+            ),
+            index=tuple(
+                slice(low, stop) for low, stop in zip(first, last, strict=True)
+            ),
         )
 
-    def block_grid(self, cpu: bool = False) -> BlockGrid:
+    def block_grid(self, cpu: bool = False, inside_domain: bool = False) -> BlockGrid:
         """The grid of this rank's stored block (halo nodes included), for the kernels.
 
         Under a spatial decomposition the kernels deposit into and interpolate
@@ -251,14 +210,22 @@ class Field(Grid):
         them the halo nodes hold the wrapped-around nodes (:meth:`fill_halos`,
         :meth:`exchange_halos`). ``cpu`` returns host arrays, for the NumPy and
         Pyccel kernels. Cached per layout.
+
+        With ``inside_domain`` the grid leaves out the halo nodes beyond a bounded
+        edge of the domain, which no exchange fills or collects: the kernels then
+        clamp there as on an unsplit field, and a stencil wider than a cell
+        neither deposits into nor reads from nodes outside the domain. This is the
+        grid of :meth:`scatter` and :meth:`gather`. ``local_with_halos[grid.index]``
+        is the part of the stored block it describes; without ``inside_domain``
+        that is all of it.
         """
         layout = self.field_data.layout
         cache = self.__dict__.setdefault("_block_grids", {})
-        key = (layout, cpu)
+        key = (layout, cpu, inside_domain)
         if key not in cache:
             if len(cache) > 4:
                 cache.clear()
-            cache[key] = self._make_block_grid(layout, cpu)
+            cache[key] = self._make_block_grid(layout, cpu, inside_domain)
         return cache[key]
 
     # Construction ------------------------------------------------------------#
@@ -588,7 +555,7 @@ class Field(Grid):
     def exchange_halos(self) -> None:
         """Add the halo nodes to their owners on the neighbouring ranks and clear them.
 
-        Call it after a deposit (:meth:`scatter_linear`) into a distributed field.
+        Call it after a deposit (:meth:`scatter`) into a distributed field.
         """
         self.field_data.accumulate_halos()
 
@@ -973,23 +940,76 @@ class Field(Grid):
             f"shape={getattr(positions, 'shape', 'N/A')}",
         )
 
-    def _kernel_periodic_kwargs(self, grid: BlockGrid) -> dict:
-        """Periodic flags for the 2-D/3-D kernels (the 1-D ones always wrap)."""
-        if self.ndim == 1 or not any(grid.periodic):
-            return {}
-        return {"periodic": grid.periodic}
+    def _marker_values(self, values: Array | float, num_positions: int) -> Array:
+        """Return ``values`` as a ``(num_components, N)`` float array.
 
-    @sp.profile("mpifield.Field.interpolate_field", tags=PROFILE_TAGS)
-    def interpolate_field(self, positions: Array | float) -> Array:
-        """Interpolate the field linearly at marker positions.
+        A number is the same value for every marker and component; a 1-D array is
+        ``N`` values of a scalar field, or the components of one marker.
+        """
+        if isinstance(values, (float, int)):
+            return xp.full((self.num_components, num_positions), values, dtype=float)
+        if not (isinstance(values, (list, tuple, np.ndarray)) or xp.is_gpu(values)):
+            raise TypeError(
+                "Unsupported format for values: "
+                f"type={type(values)}, "
+                f"shape={getattr(values, 'shape', 'N/A')}",
+            )
+        values = xp.asarray(values, dtype=float)
+        if values.ndim == 1:
+            if values.shape[0] == num_positions:
+                values = values.reshape((1, num_positions))
+            elif num_positions == 1 and values.shape[0] == self.num_components:
+                values = values.reshape((self.num_components, 1))
+            else:
+                raise ValueError(
+                    f"Expected {num_positions} values (or {self.num_components} "
+                    f"components of one marker), got {values.shape}"
+                )
+        elif values.ndim != 2 or values.shape[1] != num_positions:
+            raise ValueError(
+                f"Expected values with shape ({self.num_components}, {num_positions}), "
+                f"got {values.shape}"
+            )
+        if values.shape[0] != self.num_components:
+            raise ValueError(
+                f"Expected {self.num_components} components, got {values.shape[0]}"
+            )
+        return values
+
+    def _check_halo(self, weighting: Weighting) -> None:
+        """Raise if this field is split with fewer halo nodes than ``weighting`` needs."""
+        if self.num_ghost_points < weighting.halo and self.distributed:
+            raise ValueError(
+                f"the {weighting.name} weighting needs num_ghost_points >= "
+                f"{weighting.halo} on a field split over ranks, this one has "
+                f"{self.num_ghost_points}"
+            )
+
+    def _host_grid(self) -> BlockGrid:
+        """:meth:`block_grid` on the CPU inside the domain, cached for the current layout.
+
+        Checked by identity, without hashing the layout: the deposit of every step
+        takes this path.
+        """
+        layout = self.field_data.layout
+        cached = self.__dict__.get("_host_block_grid")
+        if cached is None or cached[0] is not layout:
+            cached = (layout, self.block_grid(cpu=True, inside_domain=True))
+            self.__dict__["_host_block_grid"] = cached
+        return cached[1]
+
+    @sp.profile("mpifield.Field.gather", tags=PROFILE_TAGS)
+    def gather(self, positions: Array | float, weighting: Weighting = LINEAR) -> Array:
+        """Interpolate the field at marker positions with ``weighting``.
 
         ``positions`` has shape ``(ndim, N)`` (or is one point as a 1-D array of
-        length ``ndim``); the result has shape ``(num_components, N)``. A position
-        outside the stored block uses its edge cell, with the weights clamped to
-        [0, 1]; on a periodic axis without halos it wraps around. Under MPI each
-        rank interpolates from its own block, so its markers must lie in it (the
-        halo nodes must be filled, :meth:`fill_halos`, for markers in the last cell).
+        length ``ndim``); the result has shape ``(num_components, N)``. With the
+        built-in weightings a position outside the grid uses its edge nodes; on a
+        periodic axis without halos it wraps around. Under MPI each rank
+        interpolates from its own block, so its markers must lie in it, and the
+        halo nodes must be filled (:meth:`fill_halos`) for markers near its edge.
         """
+        self._check_halo(weighting)
         positions = self._marker_positions(positions)
         stored = self.local_with_halos
 
@@ -997,76 +1017,26 @@ class Field(Grid):
             # gather on the GPU: no copies of the markers or the field
             import cupy  # pyright: ignore[reportMissingImports]  # the GPU extra
 
-            grid = self.block_grid()
+            grid = self.block_grid(inside_domain=True)
             result = cupy.zeros((self.num_components, positions.shape[1]))
-            self.interpolation_kernel(
-                points=positions,
-                array=stored,
-                bounds_args=grid.bounds,
-                grid_spacing=grid.grid_spacing,
-                num_gridpoints=grid.num_gridpoints,
-                result_out=result,
-                **self._kernel_periodic_kwargs(grid),
-            )
+            weighting.gather_block(positions, stored[grid.index], result, grid)
             return result
 
-        grid = self.block_grid(cpu=True)
+        grid = self._host_grid()
         result_cpu = np.zeros((self.num_components, positions.shape[1]), dtype=float)
-        self.interpolation_kernel(
-            points=xp.to_numpy(positions),
-            array=xp.to_numpy(stored),
-            bounds_args=grid.bounds,
-            grid_spacing=grid.grid_spacing,
-            num_gridpoints=grid.num_gridpoints,
-            result_out=result_cpu,
-            **self._kernel_periodic_kwargs(grid),
+        weighting.gather_block(
+            xp.to_numpy(positions), xp.to_numpy(stored)[grid.index], result_cpu, grid
         )
         return xp.asarray(result_cpu)
 
-    def _scatter_host(self, positions: ndarray, values: ndarray, data: ndarray) -> None:
-        """Deposit ``values`` ``(ncomp, N)`` at ``positions`` ``(ndim, N)`` into ``data``.
-
-        The 2D and 3D compiled kernels on float64 NumPy arrays; the grid
-        arguments are computed once per layout.
-        """
-        layout = self.field_data.layout
-        cached = self.__dict__.get("_scatter_host_args")
-        if cached is None or cached[0] is not layout:
-            grid = self.block_grid(cpu=True)
-            periodic = _periodic_flags(
-                self._kernel_periodic_kwargs(grid).get("periodic"), self.ndim
-            )
-            cached = (
-                layout,
-                (
-                    *_grid_geometry(
-                        grid.bounds, grid.grid_spacing, grid.num_gridpoints, self.ndim
-                    ),
-                    *(int(flag) for flag in periodic),
-                ),
-            )
-            self.__dict__["_scatter_host_args"] = cached
-        convert = xp.kernels.as_kernel_array
-        with xp.kernels.kernel_output(data, like=data, dtype=float) as field:
-            if self.ndim == 2:
-                scatter_linear_2d(
-                    convert(positions, data, float, strided=True),
-                    convert(values, data, float, strided=True),
-                    field,
-                    *cached[1],
-                )
-            else:
-                # the 3D kernel takes the grid as rows of (nodes, components)
-                scatter_linear_3d(
-                    convert(positions, data, float, strided=True),
-                    convert(values, data, float, strided=True),
-                    field.reshape(-1, field.shape[-1]),
-                    *cached[1],
-                )
-
-    @sp.profile("mpifield.Field.scatter_linear", tags=PROFILE_TAGS)
-    def scatter_linear(self, positions: Array | float, values: Array | float) -> None:
-        """Add marker values to the nodes with linear (cloud-in-cell) weights.
+    @sp.profile("mpifield.Field.scatter", tags=PROFILE_TAGS)
+    def scatter(
+        self,
+        positions: Array | float,
+        values: Array | float,
+        weighting: Weighting = LINEAR,
+    ) -> None:
+        """Add marker values to the nodes with ``weighting`` (linear by default).
 
         ``positions`` has shape ``(ndim, N)`` and ``values`` ``(ncomp, N)``; a 1-D
         ``values`` of length ``N`` is one component, a number is the same value
@@ -1074,279 +1044,44 @@ class Field(Grid):
         included; under MPI call :meth:`exchange_halos` afterwards. A marker with
         a zero value contributes nothing, whatever its position.
         """
+        self._check_halo(weighting)
         data = self.local_with_halos
         if (
-            self.ndim > 1
-            and type(positions) is np.ndarray
+            type(positions) is np.ndarray
             and type(values) is np.ndarray
             and type(data) is np.ndarray
             and positions.ndim == 2
             and values.ndim == 2
             and positions.shape[0] == self.ndim
+            and values.shape[0] == self.num_components
             and values.shape[1] == positions.shape[1]
             and positions.dtype == np.float64
             and values.dtype == np.float64
         ):
             # the deposit of every step: host marker arrays as the compiled
             # kernels take them, with nothing to check or convert
-            self._scatter_host(positions, values, data)
+            grid = self._host_grid()
+            weighting.scatter_block(positions, values, data[grid.index], grid)
             return
         positions = self._marker_positions(positions)
-        num_positions = positions.shape[1]
+        values = self._marker_values(values, positions.shape[1])
 
-        if isinstance(values, (list, tuple, np.ndarray)) or xp.is_gpu(values):
-            values = xp.asarray(values, dtype=float)
-            if values.ndim == 1:
-                if values.shape[0] == num_positions:
-                    values = values.reshape((1, num_positions))
-                elif num_positions == 1 and values.shape[0] == self.num_components:
-                    values = values.reshape((self.num_components, 1))
-                else:
-                    raise ValueError(
-                        f"Expected {num_positions} values (or {self.num_components} "
-                        f"components of one marker), got {values.shape}"
-                    )
-            elif values.ndim == 2:
-                if values.shape[1] != num_positions:
-                    raise ValueError(
-                        f"Expected values with shape (ncomp, {num_positions}), "
-                        f"got {values.shape}"
-                    )
-            else:
-                raise ValueError(f"Unsupported shape: {values.shape}")
-        elif isinstance(values, (float, int)):
-            values = xp.full((1, num_positions), values, dtype=float)
-        else:
-            raise TypeError(
-                "Unsupported format for values: "
-                f"type={type(values)}, "
-                f"shape={getattr(values, 'shape', 'N/A')}",
-            )
-
-        if (
-            self.ndim == 1
-            and xp.is_gpu(positions)
-            and xp.is_gpu(values)
-            and xp.is_gpu(data)
-        ) or (self.ndim == 2 and xp.is_gpu(positions) and xp.is_gpu(data)):
+        if xp.is_gpu(positions) and xp.is_gpu(data):
             # deposit on the GPU: no copies of the markers or the field
-            grid = self.block_grid()
-            self.scatter_kernel(
-                points=positions,
-                values=values,
-                bounds_args=grid.bounds,
-                grid_spacing=grid.grid_spacing,
-                num_gridpoints=grid.num_gridpoints,
-                array=data,
-                **self._kernel_periodic_kwargs(grid),
-            )
+            grid = self.block_grid(inside_domain=True)
+            weighting.scatter_block(positions, values, data[grid.index], grid)
             return
 
-        grid = self.block_grid(cpu=True)
+        grid = self._host_grid()
         field_data_cpu = xp.to_numpy(data)
-        self.scatter_kernel(
-            points=xp.to_numpy(positions),
-            values=xp.to_numpy(values),
-            bounds_args=grid.bounds,
-            grid_spacing=grid.grid_spacing,
-            num_gridpoints=grid.num_gridpoints,
-            array=field_data_cpu,
-            **self._kernel_periodic_kwargs(grid),
+        weighting.scatter_block(
+            xp.to_numpy(positions),
+            xp.to_numpy(values),
+            field_data_cpu[grid.index],
+            grid,
         )
         if field_data_cpu is not data:
             data[...] = xp.asarray(field_data_cpu)
-
-    @staticmethod
-    def scatter_kernel_1d(
-        points: Array,
-        values: Array,
-        bounds_args: Bounds,
-        grid_spacing: Array,
-        num_gridpoints: Array,
-        array: Array,
-    ) -> None:
-        """Deposit marker values onto a 1-D grid ``(nx, ncomp)``.
-
-        ``points`` is ``(1, N)`` and ``values`` ``(ncomp, N)``. On the GPU one
-        component is deposited through shared memory when the grid fits;
-        otherwise, and for several components, each component in turn.
-        """
-        num_components = array.shape[1]
-        nx = int(num_gridpoints[0])
-        args = (float(bounds_args.lower_bound[0]), float(grid_spacing[0]), nx)
-        # the kernels deposit one component; on the GPU the grid is in shared memory
-        if num_components == 1 and (
-            xp.cuda.shared_memory_fits(nx)
-            if xp.is_gpu(array)
-            else _kernels_take(array, points, values)
-        ):
-            convert = partial(
-                xp.kernels.as_kernel_array, like=array, dtype=float, strided=True
-            )
-            with xp.kernels.kernel_output(
-                array[:, 0], like=array, dtype=float
-            ) as field:
-                # reuse each block's shared grid for roughly four markers per
-                # thread, reducing grid initialization and global atomics
-                launch = (
-                    {"n_threads": (points.shape[1] + 3) // 4}
-                    if xp.is_gpu(array)
-                    else {}
-                )
-                scatter_linear_1d(
-                    convert(points[0]),
-                    convert(values[0]),
-                    field,
-                    *args,
-                    shared_mem=8 * nx,
-                    **launch,
-                )
-            return
-
-        for component in range(num_components):
-            scatter_linear_1d_numpy(
-                points[0], values[component], array[:, component], *args
-            )
-
-    @staticmethod
-    def scatter_kernel_2d(
-        points: Array,
-        values: Array,
-        bounds_args: Bounds,
-        grid_spacing: Array,
-        num_gridpoints: Array,
-        array: Array,
-        periodic: tuple[bool, ...] | None = None,
-    ) -> None:
-        """Deposit marker values onto a 2-D grid ``(nx, ny, ncomp)``.
-
-        ``points`` is ``(2, N)`` and ``values`` ``(ncomp, N)``; on a periodic axis
-        the last node's right neighbour is the first node. A CuPy ``array`` is
-        filled on the GPU (float64, the same arithmetic as the compiled CPU kernel).
-        """
-        periodic_axes = _periodic_flags(periodic, 2)
-        args = (
-            *_grid_geometry(bounds_args, grid_spacing, num_gridpoints, 2),
-            *(int(flag) for flag in periodic_axes),
-        )
-        values = values.reshape(-1, points.shape[1])
-        if _kernels_take(array, points, values):
-            convert = partial(
-                xp.kernels.as_kernel_array, like=array, dtype=float, strided=True
-            )
-            with xp.kernels.kernel_output(array, like=array, dtype=float) as field:
-                scatter_linear_2d(convert(points), convert(values), field, *args)
-            return
-        scatter_linear_2d_numpy(points, values, array, *args)
-
-    @staticmethod
-    def scatter_kernel_3d(
-        points: Array,
-        values: Array,
-        bounds_args: Bounds,
-        grid_spacing: Array,
-        num_gridpoints: Array,
-        array: Array,
-        periodic: tuple[bool, ...] | None = None,
-    ) -> None:
-        """Deposit marker values onto a 3-D grid ``(nx, ny, nz, ncomp)``.
-
-        ``points`` is ``(3, N)`` and ``values`` ``(ncomp, N)``. A CuPy ``array`` is
-        filled on the GPU, NumPy arrays by the compiled CPU kernel (or its NumPy
-        version without Pyccel).
-        """
-        args = (
-            *_grid_geometry(bounds_args, grid_spacing, num_gridpoints, 3),
-            *(int(flag) for flag in _periodic_flags(periodic, 3)),
-        )
-        values = values.reshape(-1, points.shape[1])
-        if _kernels_take(array, points, values):
-            convert = partial(
-                xp.kernels.as_kernel_array, like=array, dtype=float, strided=True
-            )
-            with xp.kernels.kernel_output(array, like=array, dtype=float) as field:
-                # the kernels take the grid as rows of (nx * ny * nz, components);
-                # the buffer is C-contiguous, so this is a view
-                scatter_linear_3d(
-                    convert(points),
-                    convert(values),
-                    field.reshape(-1, field.shape[-1]),
-                    *args,
-                )
-            return
-        scatter_linear_3d_numpy(
-            points, values, array.reshape(-1, array.shape[-1]), *args
-        )
-
-    @staticmethod
-    def interpolate_field_1d(
-        points: Array,
-        array: Array,
-        bounds_args: Bounds,
-        grid_spacing: Array,
-        num_gridpoints: Array,
-        result_out: Array,
-    ) -> None:
-        """Interpolate a 1-D grid ``(nx, ncomp)`` at ``points`` ``(1, N)`` into ``result_out``.
-
-        ``result_out`` is ``(ncomp, N)``. A marker outside the grid uses the edge
-        cell, with its weight clamped to [0, 1], as in the compiled kernels.
-        """
-        args = (*_grid_geometry(bounds_args, grid_spacing, num_gridpoints, 1), 0)
-        if _kernels_take(array, points, result_out):
-            _gather(gather_linear_1d, points, array, result_out, *args)
-            return
-        gather_linear_1d_numpy(points, array, result_out, *args)
-
-    @staticmethod
-    def interpolate_field_2d(
-        points: Array,
-        array: Array,
-        bounds_args: Bounds,
-        grid_spacing: Array,
-        num_gridpoints: Array,
-        result_out: Array,
-        periodic: tuple[bool, ...] | None = None,
-    ) -> None:
-        """Interpolate a 2-D grid ``(nx, ny, ncomp)`` bilinearly at ``points`` ``(2, N)``.
-
-        ``result_out`` is ``(ncomp, N)``. A CuPy ``array`` is interpolated on the
-        GPU (float64, the same arithmetic as the compiled CPU kernel);
-        ``result_out`` may then be on either side.
-        """
-        args = (
-            *_grid_geometry(bounds_args, grid_spacing, num_gridpoints, 2),
-            *(int(flag) for flag in _periodic_flags(periodic, 2)),
-        )
-        if _kernels_take(array, points, result_out):
-            _gather(gather_linear_2d, points, array, result_out, *args)
-            return
-        gather_linear_2d_numpy(points, array, result_out, *args)
-
-    @staticmethod
-    def interpolate_field_3d(
-        points: Array,
-        array: Array,
-        bounds_args: Bounds,
-        grid_spacing: Array,
-        num_gridpoints: Array,
-        result_out: Array,
-        periodic: tuple[bool, ...] | None = None,
-    ) -> None:
-        """Interpolate a 3-D grid ``(nx, ny, nz, ncomp)`` trilinearly at ``points`` ``(3, N)``.
-
-        ``result_out`` is ``(ncomp, N)``. A CuPy ``array`` is interpolated on the GPU.
-        """
-        args = (
-            *_grid_geometry(bounds_args, grid_spacing, num_gridpoints, 3),
-            *(int(flag) for flag in _periodic_flags(periodic, 3)),
-        )
-        # the kernels take the grid as rows of (nx * ny * nz, components)
-        flat = array.reshape(-1, array.shape[-1])
-        if _kernels_take(array, points, result_out):
-            _gather(gather_linear_3d, points, flat, result_out, *args)
-            return
-        gather_linear_3d_numpy(points, flat, result_out, *args)
 
     # Arithmetic --------------------------------------------------------------#
 
@@ -1565,22 +1300,6 @@ class Field(Grid):
     def field_data(self) -> DistributedArray:
         """Return the distributed array holding the field."""
         return self._field_data
-
-    @property
-    def scatter_kernel(self) -> Kernel:
-        """Return the deposit wrapper for this dimension (``scatter_kernel_<n>d``)."""
-        return (self.scatter_kernel_1d, self.scatter_kernel_2d, self.scatter_kernel_3d)[
-            self.ndim - 1
-        ]
-
-    @property
-    def interpolation_kernel(self) -> Kernel:
-        """Return the gather wrapper for this dimension (``interpolate_field_<n>d``)."""
-        return (
-            self.interpolate_field_1d,
-            self.interpolate_field_2d,
-            self.interpolate_field_3d,
-        )[self.ndim - 1]
 
     @property
     def num_ghost_points(self) -> int:
