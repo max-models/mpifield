@@ -52,7 +52,7 @@ def test_deposit_at_cell_centres_is_uniform_across_the_periodic_seam() -> None:
     xs = (np.arange(6) + 0.5) * dx
     ys = (np.arange(6) + 0.5) * dy
     points = np.array([(x, y) for x in xs for y in ys]).T
-    field.scatter_linear(points, np.ones((1, points.shape[1])))
+    field.scatter(points, np.ones((1, points.shape[1])))
     data = field.field_data.local_with_halos[..., 0]
     interior = data[1:-1, :]
     # Every node of an interior column has four cell centres around it.
@@ -66,7 +66,7 @@ def test_deposit_wraps_a_marker_beyond_the_last_node() -> None:
     field = _field((False, True), (5, 4))
     dx, dy = field.grid_spacing
     # A quarter cell past the last node along y lands 3/4 on node 3, 1/4 on node 0.
-    field.scatter_linear(np.array([[2 * dx], [3.25 * dy]]), np.array([[1.0]]))
+    field.scatter(np.array([[2 * dx], [3.25 * dy]]), np.array([[1.0]]))
     data = field.field_data.local_with_halos[..., 0]
     assert data[2, 3] == pytest.approx(0.75)
     assert data[2, 0] == pytest.approx(0.25)
@@ -79,7 +79,7 @@ def test_gather_interpolates_between_the_last_and_first_node() -> None:
     y_nodes = np.arange(8) * dy
     field.field_data.local_with_halos[..., 0] = np.cos(2.0 * np.pi * y_nodes)[None, :]
     point = np.array([[2 * dx], [7.5 * dy]])
-    value = float(np.asarray(field.interpolate_field(point))[0, 0])
+    value = float(np.asarray(field.gather(point))[0, 0])
     expected = 0.5 * (np.cos(2.0 * np.pi * 7 * dy) + np.cos(0.0))
     assert value == pytest.approx(expected)
 
@@ -87,16 +87,14 @@ def test_gather_interpolates_between_the_last_and_first_node() -> None:
 def test_gather_and_deposit_wrap_in_three_dimensions() -> None:
     field = _field((False, True, True), (4, 4, 4))
     dx, dy, dz = field.grid_spacing
-    field.scatter_linear(np.array([[dx], [3.5 * dy], [3.5 * dz]]), np.array([[1.0]]))
+    field.scatter(np.array([[dx], [3.5 * dy], [3.5 * dz]]), np.array([[1.0]]))
     data = field.field_data.local_with_halos[..., 0]
     assert data[1, 3, 3] == pytest.approx(0.25)
     assert data[1, 0, 0] == pytest.approx(0.25)
     assert data[1, 3, 0] == pytest.approx(0.25)
     assert data[1, 0, 3] == pytest.approx(0.25)
     value = float(
-        np.asarray(field.interpolate_field(np.array([[dx], [3.5 * dy], [3.5 * dz]])))[
-            0, 0
-        ]
+        np.asarray(field.gather(np.array([[dx], [3.5 * dy], [3.5 * dz]])))[0, 0]
     )
     assert value == pytest.approx(0.25)
 
@@ -104,7 +102,7 @@ def test_gather_and_deposit_wrap_in_three_dimensions() -> None:
 def test_bounded_axes_still_clamp() -> None:
     field = _field((False, False), (5, 5))
     dx, dy = field.grid_spacing
-    field.scatter_linear(np.array([[4 * dx], [4 * dy]]), np.array([[1.0]]))
+    field.scatter(np.array([[4 * dx], [4 * dy]]), np.array([[1.0]]))
     data = field.field_data.local_with_halos[..., 0]
     assert data[4, 4] == pytest.approx(1.0)
     assert data.sum() == pytest.approx(1.0)

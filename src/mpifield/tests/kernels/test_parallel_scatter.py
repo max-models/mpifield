@@ -21,13 +21,16 @@ def _both(name, args, shape):
     return fields["pyccel"], fields["numpy"]
 
 
-def test_scatter_linear_1d_parallel() -> None:
+@pytest.mark.parametrize("periodic", [0, 1])
+def test_scatter_linear_1d_parallel(periodic) -> None:
     rng = np.random.default_rng(0)
     num = 64
     positions = rng.uniform(-0.05, 1.05, NUM_MARKERS)
     values = rng.normal(size=NUM_MARKERS)
     compiled, reference = _both(
-        "scatter_linear_1d", (positions, values, 0.0, 1 / (num - 1), num), (num,)
+        "scatter_linear_1d",
+        (positions, values, 0.0, 1 / (num - 1), num, periodic),
+        (num,),
     )
     np.testing.assert_allclose(compiled, reference, rtol=0, atol=1e-10)
 
@@ -81,6 +84,35 @@ def _arguments_2d(positions, values, periodic, num_x=40, num_y=30):
 def _arguments_3d(positions, values, periodic, shape=(20, 12, 12)):
     nx, ny, nz = shape
     return (positions, values, 0.0, 0.0, 0.0, 1 / nx, 1 / ny, 1 / nz, *shape, *periodic)
+
+
+@pytest.mark.parametrize(
+    ("ndim", "periodic"),
+    [(1, (0,)), (1, (1,)), (2, (0, 1)), (2, (1, 1)), (3, (0, 0, 0)), (3, (1, 0, 1))],
+)
+@pytest.mark.parametrize("components", [1, 3])
+def test_scatter_quadratic_parallel(ndim, periodic, components) -> None:
+    rng = np.random.default_rng(3)
+    shape = (24, 16, 10)[:ndim]
+    positions = rng.uniform(-0.05, 1.05, (ndim, NUM_MARKERS))  # (ndim, N)
+    values = rng.normal(size=(components, NUM_MARKERS))  # (components, N)
+    values[:, ::5] = 0.0
+    positions[:, ::5] = np.nan  # dead markers deposit nothing
+    args = (
+        positions,
+        values,
+        *(0.0,) * ndim,
+        *(1 / n for n in shape),
+        *shape,
+        *periodic,
+    )
+    compiled, reference = _both(
+        f"scatter_quadratic_{ndim}d", args, (*shape, components)
+    )
+    np.testing.assert_allclose(compiled, reference, rtol=0, atol=1e-10)
+    np.testing.assert_allclose(
+        (compiled - 0.5).reshape(-1, components).sum(axis=0), values.sum(axis=1)
+    )
 
 
 @pytest.mark.parametrize("ndim", [2, 3])

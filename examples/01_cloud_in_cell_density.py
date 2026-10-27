@@ -24,7 +24,7 @@ for count in (1_000, 10_000, 100_000):
     )
     positions = rng.normal(0.0, 1.0, (1, count))  # component-major (ndim, N)
     weights = np.full((1, count), 1.0 / count)  # unit total
-    density.scatter_linear(positions, weights)
+    density.scatter(positions, weights)
     density /= float(density.grid_spacing[0])
     print(f"N = {count:>6}: total weight on the grid = {density.sum() * 0.08:.15f}")
     density.plot(ax=ax, name="density", units="1/m")

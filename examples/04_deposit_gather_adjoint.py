@@ -25,9 +25,9 @@ g.set_field_data(rng.normal(size=shape))
 rho = Field(num_gridpoints=shape, **kwargs)
 positions = rng.random((2, 1000)) * np.array([[1.0], [0.75]])
 charges = rng.normal(size=1000)
-rho.scatter_linear(positions, charges)
+rho.scatter(positions, charges)
 
-left = float(np.dot(g.interpolate_field(positions)[0], charges))
+left = float(np.dot(g.gather(positions)[0], charges))
 right = float((g * rho).sum())
 print(f"sum_i q_i g(x_i) = {left:.12f}")
 print(f"sum_n g_n rho_n  = {right:.12f}  (difference {abs(left - right):.1e})")
@@ -39,10 +39,10 @@ force = []
 for offset in offsets:
     one = Field(num_gridpoints=shape, **kwargs)
     x = np.array([[0.5 + offset * dx], [0.375]])
-    one.scatter_linear(x, 1.0)
+    one.scatter(x, 1.0)
     potential = one.smooth_binomial(passes=1, in_place=False)
     field = -potential.gradient()
-    force.append(float(field.interpolate_field(x)[0, 0]))
+    force.append(float(field.gather(x)[0, 0]))
 self_force = xr.DataArray(
     force, dims="offset", coords={"offset": offsets}, name="self-force"
 )

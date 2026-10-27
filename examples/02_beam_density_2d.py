@@ -22,7 +22,7 @@ positions = rotation @ (rng.normal(size=(2, count)) * np.array([[2.0], [0.6]]))
 density = Field(
     ndim=2, lower_bound=(-6.0, -4.0), upper_bound=(6.0, 4.0), num_gridpoints=(97, 65)
 )
-density.scatter_linear(positions, np.ones((1, count)))
+density.scatter(positions, np.ones((1, count)))
 smoothed = density.smooth_binomial(passes=4, in_place=False)
 print(f"total before {density.sum():.1f}, after smoothing {smoothed.sum():.1f}")
 

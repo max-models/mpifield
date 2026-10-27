@@ -29,7 +29,7 @@ def _region_names(**setup_kwargs) -> set[str]:
     # an application region, recorded either way
     field = Field(ndim=1, lower_bound=(0.0,), upper_bound=(1.0,), num_gridpoints=5)
     with sp.region("user.run"):
-        field.scatter_linear(np.array([[0.3]]), 1.0)
+        field.scatter(np.array([[0.3]]), 1.0)
     results = sp.finalize(verbose=False, return_results=True)
     # "*" also enables the regions of the libraries below (cunumpy's kernels)
     return {
@@ -44,6 +44,6 @@ def test_regions_are_off_by_default() -> None:
 @pytest.mark.parametrize("tags", [["mpifield"], ["*"]])
 def test_enabling_the_tag_records_the_regions(tags: list[str]) -> None:
     assert _region_names(enable_tags=tags) == {
-        "mpifield.Field.scatter_linear",
+        "mpifield.Field.scatter",
         "user.run",
     }

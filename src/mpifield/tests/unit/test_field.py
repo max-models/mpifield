@@ -10,7 +10,7 @@ import pytest
 from maybempi import MPI
 from simgeometry.objects import Circle, Rectangle
 
-from mpifield import Bounds, Field
+from mpifield import LINEAR, BlockGrid, Bounds, Field
 
 BoundsLike = tuple[float, ...]
 
@@ -73,7 +73,7 @@ def test_linear_interpolation_matches_linear_analytic_function_1d() -> None:
     field.set_field_data(2.0 + 3.0 * grid, component=0)
     positions = xp.asarray([[0.125, 0.5, 0.875]])
 
-    interpolated = field.interpolate_field(positions)[0]
+    interpolated = field.gather(positions)[0]
 
     assert xp.allclose(interpolated, 2.0 + 3.0 * positions[0])
 
@@ -88,7 +88,7 @@ def test_linear_scatter_matches_cloud_in_cell_weights_1d() -> None:
         num_components=1,
     )
 
-    field.scatter_linear(
+    field.scatter(
         positions=xp.asarray([[0.25]]),
         values=xp.asarray([[10.0]]),
     )
@@ -127,9 +127,9 @@ def test_linear_scatter_of_host_marker_arrays_matches_the_general_path(
     values = rng.random((1, num_markers))
     direct, general = make(), make()
 
-    direct.scatter_linear(positions=positions, values=values)
+    direct.scatter(positions=positions, values=values)
     # a list takes the general path, which converts and checks
-    general.scatter_linear(positions=positions.tolist(), values=values.tolist())
+    general.scatter(positions=positions.tolist(), values=values.tolist())
 
     deposited = direct.field_data.local_with_halos
     np.testing.assert_array_equal(deposited, general.field_data.local_with_halos)
@@ -146,7 +146,7 @@ def test_linear_scatter_accumulates_repeated_indices_1d() -> None:
         num_components=1,
     )
 
-    field.scatter_linear(
+    field.scatter(
         positions=xp.asarray([[0.25, 0.25, 0.25]]),
         values=xp.asarray([[1.0, 2.0, 3.0]]),
     )
@@ -166,7 +166,7 @@ def test_linear_scatter_accepts_single_point_component_values_1d() -> None:
         num_components=2,
     )
 
-    field.scatter_linear(positions=0.25, values=[10.0, 20.0])
+    field.scatter(positions=0.25, values=[10.0, 20.0])
 
     assert xp.allclose(
         field.field_data.local_with_halos,
@@ -292,10 +292,10 @@ def test_inpolate_field_1d(
     )
 
     values = [10.0] * num_components
-    field.scatter_linear(positions=0.45, values=values)
+    field.scatter(positions=0.45, values=values)
     # assert xp.sum(field.field_data) == xp.sum(values)
 
-    intp_values = field.interpolate_field(positions=0.45)
+    intp_values = field.gather(positions=0.45)
     if verbose:
         print(f"{intp_values =}")
     # assert xp.allclose(intp_values[0, 0], values)
@@ -530,11 +530,10 @@ def test_export_and_load_keep_the_values_and_the_periodic_axes(
 def test_1d_gather_uses_the_edge_cell_outside_the_grid() -> None:
     """Markers beyond the grid get the edge node values, as in the compiled pusher."""
     field = np.array([[1.0], [2.0], [4.0], [8.0]])
-    bounds = Bounds(lower_bound=np.array([0.0]), upper_bound=np.array([3.0]))
     points = np.array([[-0.5, 0.5, 2.5, 3.0, 3.7]])
     result = np.zeros((1, 5))
-    Field.interpolate_field_1d(
-        points, field, bounds, np.array([1.0]), np.array([4]), result
+    LINEAR.gather_block(
+        points, field, result, BlockGrid.from_geometry((0.0,), (1.0,), (4,))
     )
     np.testing.assert_allclose(result[0], [1.0, 1.5, 6.0, 8.0, 8.0])
 
@@ -569,15 +568,13 @@ def test_stored_block_with_halo_nodes_deposits_and_interpolates_as_the_whole_gri
     positions = rng.uniform(0.0, 1.0, (ndim, 400))
     positions[1:] *= 0.999  # inside the bounded axes
     values = rng.uniform(0.5, 1.5, 400)
-    bare.scatter_linear(positions, values)
-    padded.scatter_linear(positions, values)
+    bare.scatter(positions, values)
+    padded.scatter(positions, values)
     padded.field_data.accumulate_halos()
     assert np.allclose(padded.field_data.local, bare.field_data.local)
 
     padded.field_data.update_halos()
-    assert np.allclose(
-        padded.interpolate_field(positions), bare.interpolate_field(positions)
-    )
+    assert np.allclose(padded.gather(positions), bare.gather(positions))
 
 
 class _Potential(Field):
