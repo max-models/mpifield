@@ -143,6 +143,37 @@ class Field(Grid):
 
     __array_priority__ = 1000
 
+    # Layout ------------------------------------------------------------------#
+
+    def _periodic_for_darray(self) -> tuple[bool, ...] | None:
+        """Return periodic flags for the grid axes plus the component axis."""
+        if self.periodic is None:
+            return None
+        return _periodic_flags(self.periodic, self.ndim) + (False,)
+
+    @staticmethod
+    def _decomposition_of(grid: Grid) -> DomainDecomposition:
+        """The domain decomposition of ``grid`` (simgeometry types it loosely)."""
+        return cast("DomainDecomposition", grid.domain_decomposition_class)
+
+    def _layout(
+        self,
+        num_components: int,
+        periodic: tuple[bool, ...] | None = None,
+        halo: int | None = None,
+    ) -> mpa.Layout:
+        """Return the layout of a ``num_gridpoints + (num_components,)`` array.
+
+        The grid axes are split over the process grid and carry ``halo`` ghost
+        nodes (default: the field's); the component axis stays on every rank.
+        """
+        halo = self.num_ghost_points if halo is None else halo
+        return self._decomposition_of(self).layout(
+            self.num_gridpoints + (num_components,),
+            halo=(halo,) * self.ndim + (0,),
+            periodic=periodic,
+        )
+
     def __init__(
         self,
         ndim: int,
@@ -177,37 +208,6 @@ class Field(Grid):
         self._field_data = mpa.zeros(
             dtype=self.dtype,
             layout=self._layout(num_components, self._periodic_for_darray()),
-        )
-
-    # Layout ------------------------------------------------------------------#
-
-    def _periodic_for_darray(self) -> tuple[bool, ...] | None:
-        """Return periodic flags for the grid axes plus the component axis."""
-        if self.periodic is None:
-            return None
-        return _periodic_flags(self.periodic, self.ndim) + (False,)
-
-    @staticmethod
-    def _decomposition_of(grid: Grid) -> DomainDecomposition:
-        """The domain decomposition of ``grid`` (simgeometry types it loosely)."""
-        return cast("DomainDecomposition", grid.domain_decomposition_class)
-
-    def _layout(
-        self,
-        num_components: int,
-        periodic: tuple[bool, ...] | None = None,
-        halo: int | None = None,
-    ) -> mpa.Layout:
-        """Return the layout of a ``num_gridpoints + (num_components,)`` array.
-
-        The grid axes are split over the process grid and carry ``halo`` ghost
-        nodes (default: the field's); the component axis stays on every rank.
-        """
-        halo = self.num_ghost_points if halo is None else halo
-        return self._decomposition_of(self).layout(
-            self.num_gridpoints + (num_components,),
-            halo=(halo,) * self.ndim + (0,),
-            periodic=periodic,
         )
 
     def _make_block_grid(self, layout: mpa.Layout, cpu: bool) -> BlockGrid:
@@ -485,6 +485,12 @@ class Field(Grid):
             return data[..., component]
         return data
 
+    def _check_index(self, index: tuple, component: int) -> None:
+        if len(index) != self.ndim:
+            raise ValueError(f"index needs {self.ndim} entries, got {len(index)}")
+        if not 0 <= component < self.num_components:
+            raise IndexError(f"invalid component {component}")
+
     def set_value(self, index: IndexLike, value: float, component: int = 0) -> None:
         """Set the node at global ``index``; ranks that do not own it do nothing."""
         if isinstance(index, int):
@@ -518,12 +524,6 @@ class Field(Grid):
             # only the owner contributes a value
             value = self.comm.allreduce(value, op=MPI.SUM)
         return value
-
-    def _check_index(self, index: tuple, component: int) -> None:
-        if len(index) != self.ndim:
-            raise ValueError(f"index needs {self.ndim} entries, got {len(index)}")
-        if not 0 <= component < self.num_components:
-            raise IndexError(f"invalid component {component}")
 
     def set_inside(self, shape: Shape, value: float, component: int = 0) -> None:
         """Set the stored nodes inside ``shape`` (a simgeometry shape) to ``value``.
@@ -1406,6 +1406,20 @@ class Field(Grid):
             like.field_data.layout, xp.broadcast_to(self.local_with_halos, shape)
         )
 
+    def _coerce_operand(self, other: Any) -> Any:
+        """Return a value suitable for DistributedArray field operations."""
+        if isinstance(other, Field):
+            return self._aligned_data(other)
+        if xp.isscalar(other):
+            return other
+
+        other = xp.asarray(other)
+        if other.shape == self.num_gridpoints and self.num_components == 1:
+            expanded = xp.zeros(self.field_data.shape, dtype=other.dtype)
+            expanded[..., 0] = other
+            return expanded
+        return other
+
     def _operands(self, other: Any) -> tuple[Field, Any, Any]:
         """Return ``(template, own data, other operand)`` for an elementwise operation.
 
@@ -1429,20 +1443,6 @@ class Field(Grid):
         template, mine, theirs = self._operands(other)
         data = op(theirs, mine) if reflected else op(mine, theirs)
         return template._new_with_data(data)
-
-    def _coerce_operand(self, other: Any) -> Any:
-        """Return a value suitable for DistributedArray field operations."""
-        if isinstance(other, Field):
-            return self._aligned_data(other)
-        if xp.isscalar(other):
-            return other
-
-        other = xp.asarray(other)
-        if other.shape == self.num_gridpoints and self.num_components == 1:
-            expanded = xp.zeros(self.field_data.shape, dtype=other.dtype)
-            expanded[..., 0] = other
-            return expanded
-        return other
 
     def _new_with_data(self, field_data: DistributedArray) -> Self:
         """Create a matching field that owns the provided distributed data."""
