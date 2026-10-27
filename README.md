@@ -26,19 +26,21 @@ Documentation: <https://max-models.github.io/mpifield/>
 
 ``` python
 import numpy as np
+
 from mpifield import Field
 
-phi = Field(ndim=2, lower_bound=(0.0, 0.0), upper_bound=(0.1, 0.05), num_gridpoints=(101, 51))
+kwargs = {"ndim": 2, "lower_bound": (0.0, 0.0), "upper_bound": (0.1, 0.05)}
+phi = Field(num_gridpoints=(101, 51), **kwargs)
 x, y = np.meshgrid(*phi.get_grid_points(), indexing="ij")
 phi.set_field_data(1000.0 * np.exp(-((x - 0.05) ** 2 + (y - 0.025) ** 2) / 1e-4))
 
-E = -phi.gradient()                              # a field with one component per axis
+E = -phi.gradient()  # a field with one component per axis
 positions = np.random.default_rng(0).random((2, 10_000)) * [[0.1], [0.05]]
-E_at_markers = E.interpolate_field(positions)    # (2, N)
+E_at_markers = E.interpolate_field(positions)  # (2, N)
 
-density = Field(ndim=2, lower_bound=(0.0, 0.0), upper_bound=(0.1, 0.05), num_gridpoints=(101, 51))
-density.scatter_linear(positions, np.ones((1, 10_000)))   # cloud-in-cell deposit
-phi.plot(name="potential", units="V")            # through plasma-plots
+density = Field(num_gridpoints=(101, 51), **kwargs)
+density.scatter_linear(positions, np.ones((1, 10_000)))  # cloud-in-cell deposit
+phi.plot(name="potential", units="V")  # through plasma-plots
 ```
 
 ## What is in it
