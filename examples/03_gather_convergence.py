@@ -39,7 +39,7 @@ for ndim in (1, 2, 3):
         nodes = np.meshgrid(*field.get_grid_points(), indexing="ij")
         field.set_field_data(exact(np.stack(nodes)))
         points = rng.random((ndim, 5000))
-        errors.append(np.abs(field.interpolate_field(points)[0] - exact(points)).max())
+        errors.append(np.abs(field.gather(points)[0] - exact(points)).max())
     spacing = 1.0 / (resolutions[: len(errors)] - 1)
     error = xr.DataArray(
         errors, dims="spacing", coords={"spacing": spacing}, name="max error"

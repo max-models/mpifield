@@ -2,12 +2,14 @@
 // file is the Pyccel version (CPU), with the same arguments.  Loaded by
 // mpifield.kernels.catalog: threads visit markers in a grid-stride loop.
 //
-// Linear deposit onto a 1D grid; the right neighbour of the last node is the
-// first node.  Each block accumulates into a copy of the grid in shared memory
+// Linear deposit onto a 1D grid; on a periodic axis the right neighbour of the
+// last node is the first node, on a bounded one a marker outside the grid uses
+// the edge cell.  Each block accumulates into a copy of the grid in shared memory
 // (launch with shared_mem = 8 * num_gridpoints) and adds it to field once.
 
 #include "cunumpy/array_view.cuh"
 #include "cunumpy/atomic.cuh"
+#include "mpifield/kernels/linear_cell.cuh"
 
 extern "C" __global__
 void scatter_linear_1d(
@@ -16,7 +18,8 @@ void scatter_linear_1d(
     Array1D<double> field,
     double lower_x,
     double cell_size,
-    int num_gridpoints
+    int num_gridpoints,
+    int periodic_x
 ) {
     const long long first = blockDim.x * (long long)blockIdx.x + threadIdx.x;
     const long long stride = blockDim.x * (long long)gridDim.x;
@@ -30,14 +33,10 @@ void scatter_linear_1d(
         // Dead markers have zero weight. Do not read their positions, which
         // may be outside the domain (or non-finite), or issue zero atomics.
         if (value == 0.0) continue;
-        const double relative_x = (positions(marker) - lower_x) / cell_size;
-        int left = (int)floor(relative_x);
-        if (left < 0) left = 0;
-        if (left > num_gridpoints - 1) left = num_gridpoints - 1;
-        double fraction = relative_x - (double)left;
-        if (fraction < 0.0) fraction = 0.0;
-        if (fraction > 1.0) fraction = 1.0;
-        const int right = (left + 1) % num_gridpoints;
+        int left, right;
+        double fraction;
+        mpifield_linear_cell((positions(marker) - lower_x) / cell_size,
+                             num_gridpoints, periodic_x, &left, &right, &fraction);
         cunumpy_atomic_add(&block_field[left], (1.0 - fraction) * value);
         cunumpy_atomic_add(&block_field[right], fraction * value);
     }

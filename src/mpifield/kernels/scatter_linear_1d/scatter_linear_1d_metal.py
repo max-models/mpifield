@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 
 from mpifield._types import Array
-from mpifield.kernels._metal_grid import make_scatter_kernel, scatter
+from mpifield.kernels._metal_grid import CELL_HEADER, make_scatter_kernel, scatter
 
 _SOURCE = """
     uint marker = thread_position_in_grid.x;
@@ -17,17 +17,18 @@ _SOURCE = """
     float value = values[marker];
     // dead markers have zero weight: skip them without reading their positions
     if (value == 0.0f) return;
-    int n = grid[0];
-    float x = rel[marker];
-    int left = min(max((int)metal::floor(x), 0), n - 1);
-    float fraction = metal::clamp(x - (float)left, 0.0f, 1.0f);
-    int right = (left + 1) % n;
+    int left, right;
+    float fraction;
+    mpifield_linear_cell(rel[marker], grid[0], grid[1], left, right, fraction);
     atomic_fetch_add_explicit(&delta[left], (1.0f - fraction) * value, memory_order_relaxed);
     atomic_fetch_add_explicit(&delta[right], fraction * value, memory_order_relaxed);
 """
 
 _KERNEL = make_scatter_kernel(
-    "mpifield_scatter_linear_1d", _SOURCE, inputs=["rel", "values", "grid"]
+    "mpifield_scatter_linear_1d",
+    _SOURCE,
+    inputs=["rel", "values", "grid"],
+    header=CELL_HEADER,
 )
 
 
@@ -38,16 +39,13 @@ def scatter_linear_1d(
     lower_x: float,
     cell_size: float,
     num_gridpoints: int,
+    periodic_x: int,
 ) -> None:
-    """Deposit scalar marker values onto a 1D grid with linear weights on the GPU.
-
-    The right neighbour of the last node is the first node (periodic layout).
-    """
+    """Deposit scalar marker values onto a 1D grid with linear weights on the GPU."""
     if positions.shape[0] == 0:
         return
     rel = (np.asarray(positions, dtype=np.float64) - lower_x) / cell_size
     # dead markers may sit at non-finite positions: keep them out of float32
     rel = np.where(np.asarray(values) == 0.0, 0.0, rel)
-    scatter(
-        _KERNEL, rel, values, [int(num_gridpoints)], field=field, n_threads=rel.shape[0]
-    )
+    grid = [int(num_gridpoints), int(periodic_x)]
+    scatter(_KERNEL, rel, values, grid, field=field, n_threads=rel.shape[0])

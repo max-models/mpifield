@@ -39,15 +39,15 @@ for d in range(2):
     mine &= (positions[d] >= first[d]) & upper
 local = np.ascontiguousarray(positions[:, mine])
 
-density.scatter_linear(local, np.ones((1, local.shape[1])))
+density.scatter(local, np.ones((1, local.shape[1])))
 density.exchange_halos()
 total = density.sum()
 
 density.fill_halos()
-gathered = density.interpolate_field(local)
+gathered = density.gather(local)
 
 serial = Field(num_gridpoints=(129, 129), **kwargs)
-serial.scatter_linear(positions, np.ones((1, positions.shape[1])))
+serial.scatter(positions, np.ones((1, positions.shape[1])))
 error = np.abs(density.to_numpy() - serial.to_numpy()).max()
 if rank == 0:
     print(f"{size} ranks: total {total:.0f}, largest difference to serial {error:.1e}")

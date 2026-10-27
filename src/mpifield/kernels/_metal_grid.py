@@ -2,7 +2,8 @@
 
 Positions ``(ndim, N)`` are turned into cell coordinates ``(x - lower) / cell_size`` on
 the host in float64; the kernels compute the cell and the weights in float32 with
-:data:`CELL_HEADER`, the arithmetic of ``linear_cell.cuh``. A scatter accumulates
+:data:`CELL_HEADER`, the arithmetic of ``linear_cell.cuh`` (:data:`QUADRATIC_HEADER` and
+``quadratic_cell.cuh`` for the quadratic ones). A scatter accumulates
 into a zeroed float32 grid with float atomics (no 64-bit atomics on the Apple GPU),
 which the host adds to the caller's grid in float64: the summation order, hence the
 last bits, differ from the CPU. See :mod:`mpifield.kernels._metal`.
@@ -16,7 +17,14 @@ import numpy as np
 from mpifield._types import Array
 from mpifield.kernels._metal import THREADGROUP, make_kernel
 
-__all__ = ["CELL_HEADER", "make_kernel", "make_scatter_kernel", "relative", "scatter"]
+__all__ = [
+    "CELL_HEADER",
+    "QUADRATIC_HEADER",
+    "make_kernel",
+    "make_scatter_kernel",
+    "relative",
+    "scatter",
+]
 
 #: The cell of a coordinate along one axis, as ``mpifield_linear_cell`` in ``linear_cell.cuh``.
 CELL_HEADER = """
@@ -36,6 +44,32 @@ inline void mpifield_linear_cell(
     }
     left = l;
     fraction = metal::clamp(rel - (float)l, 0.0f, 1.0f);
+}
+"""
+
+#: The stencil of a coordinate along one axis for quadratic weights, as
+#: ``mpifield_quadratic_cell`` in ``quadratic_cell.cuh``.
+QUADRATIC_HEADER = """
+inline void mpifield_quadratic_cell(
+    float rel, int num, int periodic, thread int* node, thread float* weight) {
+    int c;
+    if (periodic) {
+        rel = rel - (float)num * metal::floor(rel / (float)num);
+        c = (int)(rel + 0.5f);
+        node[0] = (c + num - 1) % num;
+        node[1] = c % num;
+        node[2] = (c + 1) % num;
+    } else {
+        rel = metal::clamp(rel, 0.0f, (float)(num - 1));
+        c = (int)(rel + 0.5f);
+        node[0] = c > 0 ? c - 1 : 0;
+        node[1] = c;
+        node[2] = c < num - 1 ? c + 1 : num - 1;
+    }
+    float d = rel - (float)c;
+    weight[0] = 0.5f * (0.5f - d) * (0.5f - d);
+    weight[1] = 0.75f - d * d;
+    weight[2] = 0.5f * (0.5f + d) * (0.5f + d);
 }
 """
 

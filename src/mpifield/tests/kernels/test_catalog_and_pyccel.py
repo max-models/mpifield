@@ -17,7 +17,7 @@ import cunumpy as xp
 import numpy as np
 import pytest
 
-from mpifield import Field
+from mpifield import LINEAR, QUADRATIC, Field
 from mpifield.kernels.catalog import KERNEL_NAMES, KERNELS, metal_kernel
 
 
@@ -102,17 +102,18 @@ def _points(rng, field, n=2000):
         (3, (True, True, True), 3),
     ],
 )
-def test_compiled_deposits_match_numpy(ndim, periodic, components):
-    _compiled(f"scatter_linear_{ndim}d")
+@pytest.mark.parametrize("weighting", [LINEAR, QUADRATIC], ids=lambda w: w.name)
+def test_compiled_deposits_match_numpy(ndim, periodic, components, weighting):
+    _compiled(f"scatter_{weighting.name}_{ndim}d")
     rng = np.random.default_rng(1)
     compiled = _field(ndim, periodic, components)
     points = _points(rng, compiled)
     values = rng.uniform(0.5, 1.5, (components, points.shape[1]))
-    compiled.scatter_linear(points, values)
+    compiled.scatter(points, values, weighting)
 
     fallback = _field(ndim, periodic, components)
     with xp.kernels.use_host_kernel_implementation("numpy"):  # as without Pyccel
-        fallback.scatter_linear(points, values)
+        fallback.scatter(points, values, weighting)
     np.testing.assert_allclose(
         xp.to_numpy(compiled.local_with_halos),
         xp.to_numpy(fallback.local_with_halos),
@@ -126,38 +127,45 @@ def test_compiled_deposits_match_numpy(ndim, periodic, components):
     ("ndim", "periodic"),
     [
         (1, None),
+        (1, (True,)),
         (2, (False, True)),
         (2, (True, True)),
         (3, (False, False, False)),
         (3, (True, False, True)),
     ],
 )
-def test_compiled_gathers_match_numpy(ndim, periodic):
-    _compiled(f"gather_linear_{ndim}d")
+@pytest.mark.parametrize("weighting", [LINEAR, QUADRATIC], ids=lambda w: w.name)
+def test_compiled_gathers_match_numpy(ndim, periodic, weighting):
+    _compiled(f"gather_{weighting.name}_{ndim}d")
     rng = np.random.default_rng(2)
-    field = _field(ndim, periodic if ndim > 1 else None, components=2)
+    field = _field(ndim, periodic, components=2)
     field.local_with_halos[...] = rng.normal(size=field.local_with_halos.shape)
     points = _points(rng, field)
-    compiled = np.asarray(xp.to_numpy(field.interpolate_field(points)))
+    compiled = np.asarray(xp.to_numpy(field.gather(points, weighting)))
     with xp.kernels.use_host_kernel_implementation("numpy"):
-        fallback = np.asarray(xp.to_numpy(field.interpolate_field(points)))
+        fallback = np.asarray(xp.to_numpy(field.gather(points, weighting)))
     np.testing.assert_allclose(compiled, fallback, rtol=1e-13, atol=1e-13)
 
 
+@pytest.mark.parametrize("periodic", [False, True])
 @pytest.mark.parametrize("ndim", [1, 2, 3])
-def test_deposit_and_gather_are_transposes(ndim):
-    """sum_i g(x_i) q_i = sum_n G_n rho_n for linear weights: the two are adjoint."""
+@pytest.mark.parametrize("weighting", [LINEAR, QUADRATIC], ids=lambda w: w.name)
+def test_deposit_and_gather_are_transposes(ndim, periodic, weighting):
+    """sum_i g(x_i) q_i = sum_n G_n rho_n: each weighting's two kernels are adjoint.
+
+    Also at the edges of bounded axes, where the quadratic stencil folds back.
+    """
     rng = np.random.default_rng(7)
-    field = _field(ndim)
-    density = _field(ndim)
+    field = _field(ndim, (periodic,) * ndim)
+    density = _field(ndim, (periodic,) * ndim)
     field.local_with_halos[...] = rng.normal(size=field.local_with_halos.shape)
     lower = np.asarray(field.lower_bound)
     upper = np.asarray(field.upper_bound)
     points = lower[:, None] + (upper - lower)[:, None] * rng.random((ndim, 500))
     charges = rng.normal(size=500)
 
-    density.scatter_linear(points, charges)
-    gathered = np.asarray(xp.to_numpy(field.interpolate_field(points)))[0]
+    density.scatter(points, charges, weighting)
+    gathered = np.asarray(xp.to_numpy(field.gather(points, weighting)))[0]
 
     assert np.dot(gathered, charges) == pytest.approx(
         float(np.sum(field.local_with_halos * density.local_with_halos)), rel=1e-12

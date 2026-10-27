@@ -2,7 +2,7 @@
 
 Deposit a 3D cloud of markers, gather back from it, and look at it in slices and lines.
 
-The same calls work in 1D, 2D and 3D: `scatter_linear` with $(3, N)$ positions, `evaluate`
+The same calls work in 1D, 2D and 3D: `scatter` with $(3, N)$ positions, `evaluate`
 with one coordinate fixed for a plane, two for a line. Here a cloud with a hollow core is
 deposited, smoothed and cut through its centre.
 """
@@ -22,9 +22,9 @@ positions = direction * (0.5 + 0.08 * rng.normal(size=count))  # a spherical she
 density = Field(
     ndim=3, lower_bound=(-1.0,) * 3, upper_bound=(1.0,) * 3, num_gridpoints=41
 )
-density.scatter_linear(positions, np.ones((1, count)))
+density.scatter(positions, np.ones((1, count)))
 density.smooth_binomial(passes=2)
-gathered = density.interpolate_field(positions)
+gathered = density.gather(positions)
 print(f"mean density seen by the markers: {gathered.mean():.1f} per node")
 
 fig, (left, right) = plt.subplots(1, 2, figsize=(11, 4.5), layout="constrained")

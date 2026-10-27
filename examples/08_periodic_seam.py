@@ -31,7 +31,7 @@ radius = 0.3 + 0.03 * rng.normal(size=count)
 positions = np.stack(
     [0.5 + radius * np.cos(angle), np.mod(radius * np.sin(angle), 1.0)]
 )
-density.scatter_linear(positions, np.ones((1, count)))
+density.scatter(positions, np.ones((1, count)))
 
 density.plot(name="markers per node", equal_aspect=True, title="a ring across the seam")
 density.plot(x=0.5, y=np.linspace(0.0, 1.0, 400), name="markers per node")

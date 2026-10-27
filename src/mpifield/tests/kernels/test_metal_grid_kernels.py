@@ -107,7 +107,40 @@ def test_scatter_linear_1d_skips_dead_markers():
     results = []
     for function in (KERNELS[name], _metal(name)):
         field = np.full(NUM[0], 0.25)
-        function(positions, values, field, LOWER[0], CELL[0], NUM[0])
+        function(positions, values, field, LOWER[0], CELL[0], NUM[0], 0)
+        results.append(field)
+    assert np.isfinite(results[1]).all()
+    _close(results[1], results[0])
+
+
+@pytest.mark.parametrize(
+    ("ndim", "periodic"), [(d, p) for d, ps in PERIODIC.items() for p in ps]
+)
+def test_gather_quadratic(ndim, periodic):
+    name = f"gather_quadratic_{ndim}d"
+    positions = _positions(ndim, seed=4)
+    field = np.random.default_rng(5).normal(size=(*NUM[:ndim], 3))
+    results = []
+    for function in (KERNELS[name], _metal(name)):
+        result = np.zeros((3, N))  # (components, N)
+        function(positions, field, result, *_axis_args(ndim, periodic))
+        results.append(result)
+    _close(results[1], results[0])
+
+
+@pytest.mark.parametrize(
+    ("ndim", "periodic"), [(d, p) for d, ps in PERIODIC.items() for p in ps]
+)
+def test_scatter_quadratic(ndim, periodic):
+    name = f"scatter_quadratic_{ndim}d"
+    positions = _positions(ndim, seed=6)
+    values = np.random.default_rng(7).normal(size=(2, N))  # (components, N)
+    values[:, ::3] = 0.0
+    positions[:, ::3] = np.nan  # dead markers may sit anywhere
+    results = []
+    for function in (KERNELS[name], _metal(name)):
+        field = np.full((*NUM[:ndim], 2), 0.25)  # accumulates into existing values
+        function(positions, values, field, *_axis_args(ndim, periodic))
         results.append(field)
     assert np.isfinite(results[1]).all()
     _close(results[1], results[0])
