@@ -47,3 +47,17 @@ def test_enabling_the_tag_records_the_regions(tags: list[str]) -> None:
         "mpifield.Field.scatter",
         "user.run",
     }
+
+
+def test_the_opt_in_tag_has_an_entry_point():
+    """``scope-profiler tags`` finds the tag through the package's entry point."""
+    from importlib.metadata import entry_points
+
+    from mpifield._profiling import PROFILE_TAGS
+
+    found = {
+        entry_point.name: entry_point.value
+        for entry_point in entry_points(group="scope_profiler.opt_in_tags")
+    }
+    assert found.get("mpifield") == "mpifield"
+    assert "mpifield" in PROFILE_TAGS
