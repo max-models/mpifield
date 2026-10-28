@@ -60,6 +60,9 @@ optional-dependencies.plot = [ "matplotlib>=3.10", "plasma-plots>=0.2.5" ]
 optional-dependencies.test = [ "mpifield[plot]", "pytest", "pytest-cov", "pytest-mpi" ]
 urls.Source = "https://github.com/max-models/mpifield"
 
+[project.entry-points."scope_profiler.opt_in_tags"]
+mpifield = "mpifield"
+
 [tool.setuptools]
 package-data."*" = [ "py.typed" ]
 package-data.mpifield = [ "kernels/*.cuh", "kernels/*/*.cu" ]
