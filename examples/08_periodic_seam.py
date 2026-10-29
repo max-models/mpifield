@@ -1,4 +1,4 @@
-"""A periodic axis
+"""Periodic axis
 
 On a periodic axis the last node neighbours the first: deposits and gathers wrap across the seam.
 

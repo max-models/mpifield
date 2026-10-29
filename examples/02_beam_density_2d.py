@@ -1,4 +1,4 @@
-"""A beam's density in 2D
+"""Beam density in 2D
 
 Deposit a sheared, tilted Gaussian beam on a 2D grid, then smooth the deposit.
 

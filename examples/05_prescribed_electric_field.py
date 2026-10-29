@@ -1,6 +1,6 @@
-"""An electric field from a prescribed potential
+"""Prescribed electric field
 
-Build $E = -\\nabla\\phi$ on a grid from a potential given as a function, here a three-electrode lens.
+An electric field from a prescribed potential: build $E = -\\nabla\\phi$ on a grid from a potential given as a function, here a three-electrode lens.
 
 `electric_field_from_potential` evaluates the potential on the nodes and differentiates it
 with second-order central differences. The lens has three cylinders, the middle one at

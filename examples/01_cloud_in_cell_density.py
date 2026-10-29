@@ -1,4 +1,4 @@
-"""Cloud-in-cell density in 1D
+"""Cloud-in-cell density
 
 Deposit a Maxwellian cloud of markers on a 1D grid and compare the density with the exact profile.
 
