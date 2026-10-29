@@ -1,6 +1,6 @@
-"""Vector fields: the E x B drift
+"""E x B drift
 
-Combine fields with arithmetic, `gradient`, `cross`, `dot` and `magnitude`: the drift velocity of a magnetized plasma.
+Vector fields: combine fields with arithmetic, `gradient`, `cross`, `dot` and `magnitude`: the drift velocity of a magnetized plasma.
 
 A potential hill $\\phi = \\phi_0 e^{-r^2/w^2}$ in a uniform magnetic field $B \\hat z$ makes
 the guiding centres drift with $v_E = E \\times B / B^2$, along the equipotentials. The

@@ -1,6 +1,6 @@
-"""Deposit and gather are transposes
+"""Adjoint deposit and gather
 
-The scatter of marker values and the gather of a field use the same weights, so they are adjoint.
+Deposit and gather are transposes: the scatter of marker values and the gather of a field use the same weights, so they are adjoint.
 
 For any field $g$ on the nodes and charges $q_i$ at positions $x_i$,
 $\\sum_i q_i\\, g(x_i) = \\sum_n g_n \\rho_n$ with $\\rho$ the deposit of the charges. That is

@@ -1,6 +1,6 @@
-"""Test particles in a fixed field
+"""Test particles
 
-Push charged particles through a field on a grid with a leapfrog scheme, gathering the field every step.
+Test particles in a fixed field: push charged particles through a field on a grid with a leapfrog scheme, gathering the field every step.
 
 This is the loop of a test-particle code: `gather` gives the electric field at
 all markers at once, from the compiled gather. The field is that of a 2D potential well,
