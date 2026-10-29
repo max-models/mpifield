@@ -8,7 +8,6 @@ version = "0.1.0"
 description = "Fields on uniform grids split over MPI ranks, with compiled linear gather and scatter for particle codes."
 readme = "README.md"
 keywords = [ "cuda", "field", "mpi", "particle-in-cell", "plasma", "pyccel" ]
-license = { file = "LICENSE.txt" }
 authors = [ { name = "Max" } ]
 requires-python = ">=3.10"
 classifiers = [
