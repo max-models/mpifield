@@ -68,8 +68,8 @@ density = Field(
 )
 ```
 
-See the [MPI tutorial](/mpifield/tutorials/mpi-and-halos/), and the
-[full examples](/mpifield/full-examples/) for a gallery of complete scripts. The
+See the [MPI and halos](/mpifield/examples/mpi-and-halos/) example, and the
+[example scripts](/mpifield/example-scripts/) for a gallery of complete scripts. The
 [API reference](/mpifield/api/mpifield/) documents every class and function.
 
 ## Profiling
