@@ -31,13 +31,13 @@ jobs:
       smoke-paths: |
         getting-started/installation/index.html
         getting-started/quickstart/index.html
-        tutorials/index.html
-        tutorials/getting-started/index.html
-        tutorials/mpi-and-halos/index.html
-        tutorials/getting-started/getting_started.ipynb
-        full-examples/index.html
-        full-examples/01-cloud-in-cell-density/index.html
-        full-examples/01-cloud-in-cell-density/plot-1.png
-        full-examples/12-kernel-backends/index.html
+        examples/index.html
+        examples/getting-started/index.html
+        examples/mpi-and-halos/index.html
+        examples/getting-started/getting_started.ipynb
+        example-scripts/index.html
+        example-scripts/01-cloud-in-cell-density/index.html
+        example-scripts/01-cloud-in-cell-density/plot-1.png
+        example-scripts/12-kernel-backends/index.html
         api/mpifield/index.html
         api/mpifield/field/index.html
