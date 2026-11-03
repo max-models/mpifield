@@ -53,10 +53,11 @@ phi.plot(name="potential", units="V")  # through plasma-plots
   `local_with_halos`, `to_numpy`), halo exchange (`fill_halos`,
   `exchange_halos`), gather and scatter (`gather`, `scatter`),
   arithmetic and ufuncs (a scalar field broadcasts over a vector field’s
-  components), `gradient`, `cross`, `dot`, `magnitude`, global
-  reductions, smoothing filters, `set_inside` for simgeometry shapes,
-  `evaluate` to xarray, `plot` with plasma-plots, and NetCDF
-  `export`/`load`.
+  components), densities (`deposit_density`: a deposit over
+  `node_volumes`, e.g. velocity moments), `gradient`, `cross`, `dot`,
+  `magnitude`, global reductions, smoothing filters, `set_inside` for
+  simgeometry shapes, `evaluate` to xarray, `plot` with plasma-plots,
+  and NetCDF `export`/`load`.
 - `Weighting`: a deposit and its gather for each number of dimensions,
   and the halo nodes they need. `LINEAR` (the default) and `QUADRATIC`
   are built in; a weighting of your own is a pair of functions or

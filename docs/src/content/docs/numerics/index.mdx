@@ -70,6 +70,9 @@ The split deposit and gather equal the serial ones.
   zero outside a bounded axis, wrapped on a periodic one.
 - **[Prescribed fields](/mpifield/numerics/prescribed/)**: $\mathbf E = -\nabla\phi$ of a
   given potential, e.g. a table along one axis, for test particles.
+- **[Densities](/mpifield/numerics/field/)**: a deposit divided by the volume each node
+  collects, half a cell on a bounded edge (`deposit_density`), e.g. the velocity moments
+  $n$, $n u$, $n\langle v^2\rangle$ of the products $w$, $w v$, $w v^2$.
 - **[Evaluation](/mpifield/numerics/evaluate/)** as xarray: linear interpolation between the
   nodes, whatever the weighting.
 

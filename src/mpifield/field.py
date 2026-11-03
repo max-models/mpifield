@@ -247,13 +247,20 @@ class Field(Grid):
     # Construction ------------------------------------------------------------#
 
     @classmethod
-    def on_grid(cls, grid: Grid, num_components: int = 1, split: bool = True) -> Self:
+    def on_grid(
+        cls,
+        grid: Grid,
+        num_components: int = 1,
+        split: bool = True,
+        num_ghost_points: int = 1,
+    ) -> Self:
         """Return a zero field on the nodes of ``grid``, split as ``grid`` is.
 
-        On a spatially decomposed grid each rank holds its own nodes plus one
-        halo node on every side, which the deposit accumulates into and the
-        interpolation reads from (`block_grid`); otherwise, or with
-        ``split=False``, every rank holds the whole grid.
+        On a spatially decomposed grid each rank holds its own nodes plus
+        ``num_ghost_points`` halo nodes on every side (1 for `LINEAR`, 2 for
+        `QUADRATIC`), which the deposit accumulates into and the interpolation
+        reads from (`block_grid`); otherwise, or with ``split=False``, every rank
+        holds the whole grid.
         """
         decomposition = cls._decomposition_of(grid)
         distributed = (
@@ -268,7 +275,7 @@ class Field(Grid):
             upper_bound=grid.upper_bound,
             num_gridpoints=grid.num_gridpoints,
             comm=grid.comm if distributed else None,
-            num_ghost_points=1 if distributed else 0,
+            num_ghost_points=num_ghost_points if distributed else 0,
             domain_decomposition=decomposition.decompose if distributed else None,
             periodic=grid.periodic,
         )
@@ -552,6 +559,33 @@ class Field(Grid):
         `block_grid`.
         """
         return self.field_data.local_with_halos
+
+    def node_volumes(self) -> Self:
+        """Return the volume each node collects in a deposit, as a one-component field.
+
+        A node collects one cell, ``prod(grid_spacing)``, and on a bounded axis
+        the first and last node half of it (the cell reaches beyond the domain
+        on one side). A deposit divided by it is a density whose sum times the
+        volumes is the total deposited. The halo nodes are filled from the
+        neighbouring ranks; those beyond a bounded domain edge stay zero.
+        """
+        volumes = self._like(num_components=1)
+        periodic = _periodic_flags(self.periodic, self.ndim)
+        local = xp.ones(volumes.local.shape[:-1], dtype=self.dtype)
+        for axis in range(self.ndim):
+            start, stop = self.proc_index_bounds[axis]
+            factor = np.full(stop - start, float(self.grid_spacing[axis]))
+            if not periodic[axis]:
+                nodes = np.arange(start, stop)
+                last = int(self.num_gridpoints[axis]) - 1
+                factor[(nodes == 0) | (nodes == last)] *= 0.5
+            shape = [1] * self.ndim
+            shape[axis] = stop - start
+            local = local * xp.asarray(factor).reshape(shape)
+        volumes.local[..., 0] = local
+        if volumes.distributed:
+            volumes.fill_halos()
+        return volumes
 
     def component(self, component: int) -> DistributedArray:
         """Return one component as a distributed array sharing this field's storage."""
@@ -1144,6 +1178,44 @@ class Field(Grid):
         )
         if field_data_cpu is not data:
             data[...] = xp.asarray(field_data_cpu)
+
+    @method(
+        equations={
+            r"density": r"n_{\mathbf k} \mathrel{+}= \frac{1}{V_{\mathbf k}} \sum_i W_{\mathbf k}(\mathbf x_i)\, q_i",
+            r"volume": r"V_{\mathbf k} = \prod_d h_d \cdot \prod_{d\ \text{bounded}} \left(1 - \tfrac12 [k_d = 0] - \tfrac12 [k_d = N_d - 1]\right)",
+            r"total": r"\sum_{\mathbf k} V_{\mathbf k}\, n_{\mathbf k} = \sum_i q_i",
+        },
+        assumptions=(
+            "the weighting $W$ of `scatter`, linear by default; each value is one component, e.g. $w$, $w v_x$, $w v_x v_y$ for the velocity moments",
+            "a bounded boundary node collects half a cell, so its deposit is divided by half the volume",
+            "on a split field each rank passes the markers of its own block; the halos are exchanged here (collective)",
+        ),
+        components=("mpifield.weighting.Weighting.scatter_block",),
+        symbolic=_method_checks.density_rules,
+    )
+    @sp.profile("mpifield.Field.deposit_density", tags=PROFILE_TAGS)
+    def deposit_density(
+        self,
+        positions: Array | float,
+        values: Array | float,
+        weighting: Weighting = LINEAR,
+    ) -> None:
+        """Add the density of the marker ``values`` to the nodes: a deposit over the node volumes.
+
+        Scatters ``values`` (``(ncomp, N)``, or ``(N,)`` for one component) into
+        a zero field like this one, exchanges its halos on a split field, divides
+        it by `node_volumes` and adds it to this field's nodes; the halo nodes are
+        left as they are. With a velocity moment per component (``w``,
+        ``w v_x``, ...) this gives ``n``, ``n u_x``, ... Collective on a split
+        field. With markers spread over the ranks of a replicated field, sum the
+        result over the ranks.
+        """
+        deposit = self._like()
+        deposit.scatter(positions, values, weighting)
+        if deposit.distributed:
+            deposit.exchange_halos()
+        local = self.local
+        local += deposit.local / self.node_volumes().local
 
     # Arithmetic --------------------------------------------------------------#
 
