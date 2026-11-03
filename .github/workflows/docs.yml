@@ -39,5 +39,10 @@ jobs:
         example-scripts/01-cloud-in-cell-density/index.html
         example-scripts/01-cloud-in-cell-density/plot-1.png
         example-scripts/12-kernel-backends/index.html
+        numerics/index.html
+        numerics/kernels-linear-cell/index.html
+        numerics/kernels-quadratic-cell/index.html
+        numerics/weighting/index.html
+        numerics/field/index.html
         api/mpifield/index.html
         api/mpifield/field/index.html

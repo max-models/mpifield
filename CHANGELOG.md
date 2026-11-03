@@ -16,6 +16,21 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Method cards (methodcard) on the numerics: the linear and quadratic shape functions
+  (`linear_cell`, `quadratic_cell`), the deposit and the gather (`Weighting.scatter_block`,
+  `Weighting.gather_block`) and their adjointness (`Weighting`), the block grid and the halo
+  exchanges, the gradient, the smoothing filters, the prescribed field and the evaluation,
+  with their assumptions and references. `test_method_cards.py` checks them: 19 SymPy rules
+  (the shape functions, partition of unity and first moment, edge folds and seams through the
+  compiled kernels; the operators), the second order of the two gathers, the gradient and
+  `electric_field_from_potential`, and the cards of the docs against those of the code. Adds
+  the `methodcard` dependency (`methodcard[symbolic]` in the test extra).
+- A Numerics section in the docs (header and sidebar): an overview
+  (`docs/src/content/docs/numerics/index.mdx`) and one page per module
+  (starlight-theme's `methodcard: { pages: true }`, theme 0.7.4); each method's API page shows
+  its card.
+- The cross references in the docstrings render on the API pages: code spans instead of
+  `:class:`, `:meth:` and `:func:` roles.
 - `Field`, moved out of picnic (`picnic.field`): a field on the nodes of a uniform 1D, 2D or
   3D grid, split over MPI ranks with halo nodes (an mpiarray `DistributedArray` on a
   simgeometry `Grid`), with gather (`gather`, was `interpolate_field`) and scatter

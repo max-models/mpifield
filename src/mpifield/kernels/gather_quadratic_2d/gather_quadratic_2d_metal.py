@@ -2,7 +2,7 @@
 
 ``gather_quadratic_2d_pyccel.py`` next to this file is the CPU version with the same
 arguments. One thread per marker (``positions`` ``(2, N)``, ``result``
-``(components, N)``); see :mod:`mpifield.kernels._metal_grid`.
+``(components, N)``); see `mpifield.kernels._metal_grid`.
 """
 
 from __future__ import annotations

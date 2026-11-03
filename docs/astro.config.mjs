@@ -8,9 +8,25 @@ export default defineDocs({
 	title: 'mpifield',
 	description: 'Fields on uniform grids split over MPI ranks, with compiled linear gather and scatter for particle codes.',
 	pythonPackage: 'mpifield',
+	// the method cards: a Numerics section with the overview (numerics/index.mdx) and one page per
+	// module, from the shape functions to the field operations, and a Numerics section on each
+	// method's API page
+	methodcard: {
+		pages: true,
+		index: false,
+		labels: {
+			'mpifield.kernels.linear_cell': 'Linear weights',
+			'mpifield.kernels.quadratic_cell': 'Quadratic weights',
+			'mpifield.weighting': 'Deposit and gather',
+			'mpifield.field': 'Halos, gradient, smoothing',
+			'mpifield.prescribed': 'Prescribed fields',
+			'mpifield.evaluate': 'Evaluation',
+		},
+	},
 	nav: [
 		{ label: 'Getting started', link: '/getting-started/installation/' },
 		{ label: 'Examples', link: '/examples/' },
+		{ label: 'Numerics', link: '/numerics/' },
 		{ label: 'Development', link: '/development/docs/' },
 		{ label: 'API', link: '/api/mpifield/' },
 	],

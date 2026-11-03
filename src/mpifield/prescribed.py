@@ -6,13 +6,25 @@ from collections.abc import Callable, Sequence
 
 import cunumpy as xp
 from maybempi import MPI
+from methodcard import method
 
+from mpifield import _method_checks
 from mpifield._types import Array
 from mpifield.field import Field
 
 Potential = Callable[..., Array]
 
 
+@method(
+    equations={
+        r"table": r"\phi(\mathbf x) = \phi_j + (\phi_{j+1} - \phi_j) \frac{x_a - z_j}{z_{j+1} - z_j} \ \ (z_j \le x_a \le z_{j+1}), \qquad \phi_0 \text{ below } z_0, \quad \phi_{n-1} \text{ above } z_{n-1}",
+    },
+    assumptions=(
+        "$x_a$ the coordinate along `axis`; at least two strictly increasing table positions $z_j$",
+        "potentials in V, positions in m",
+    ),
+    symbolic=_method_checks.axial_potential_rules,
+)
 def axial_potential(
     positions: Sequence[float],
     values: Sequence[float],
@@ -23,7 +35,7 @@ def axial_potential(
     ``values`` are the potentials at the increasing ``positions`` (m); between
     them the potential is interpolated linearly, outside them it is constant.
     The result takes the coordinate arrays of the grid, as
-    :func:`electric_field_from_potential` calls it.
+    `electric_field_from_potential` calls it.
     """
     table_positions = xp.asarray(positions, dtype=float)
     table_values = xp.asarray(values, dtype=float)
@@ -38,6 +50,19 @@ def axial_potential(
     return potential
 
 
+@method(
+    equations={
+        r"field": r"\mathbf E = -\nabla \phi",
+        r"differences": r"E_{d,k} = -\frac{\phi_{k+1} - \phi_{k-1}}{2 h_d} \text{ inside}, \qquad E_{d,0} = -\frac{\phi_1 - \phi_0}{h_d}, \quad E_{d,N-1} = -\frac{\phi_{N-1} - \phi_{N-2}}{h_d}",
+    },
+    order=2,
+    assumptions=(
+        r"$\phi$ evaluated on the nodes; second order inside, first order at both ends of every axis, also a periodic one (no wrapping, unlike `Field.gradient`)",
+        "the order is that of the interior nodes",
+        "no Poisson equation is solved: the field is prescribed",
+    ),
+    problem=_method_checks.electric_field_problem,
+)
 def electric_field_from_potential(
     potential: Potential,
     lower_bound: tuple[float, ...],
@@ -53,7 +78,7 @@ def electric_field_from_potential(
     field has one component per axis, in V/m, from second-order central
     differences (one-sided at the grid ends).  No Poisson equation is solved:
     the field is fixed, e.g. for test particles.
-    ``field_options`` go to :class:`~mpifield.Field`.
+    ``field_options`` go to `Field`.
     """
     ndim = len(lower_bound)
     grid = Field(

@@ -1,19 +1,19 @@
 """A field on the nodes of a uniform grid, split over MPI ranks, with gather and scatter.
 
-:class:`Field` is a :class:`simgeometry.grid.Grid` holding an
-:class:`mpiarray.DistributedArray` of shape ``num_gridpoints + (num_components,)``:
+`Field` is a `simgeometry.grid.Grid` holding an
+`mpiarray.DistributedArray` of shape ``num_gridpoints + (num_components,)``:
 the grid axes are split over the ranks' process grid with ``num_ghost_points`` halo
 nodes, the component axis is never split. On it:
 
-- :meth:`Field.gather` interpolates the field at marker positions and
-  :meth:`Field.scatter` deposits marker values onto the nodes, both with a
-  :class:`~mpifield.weighting.Weighting` (linear cloud-in-cell by default, or
+- `Field.gather` interpolates the field at marker positions and
+  `Field.scatter` deposits marker values onto the nodes, both with a
+  `Weighting` (linear cloud-in-cell by default, or
   quadratic, or one of your own) through compiled kernels (Pyccel on the CPU, CUDA
   for CuPy arrays, a NumPy fallback);
 - elementwise arithmetic and NumPy ufuncs return new fields; ``sum``, ``min``, ...
   reduce over all ranks;
-- :meth:`Field.evaluate` returns the field, or a line or plane of it, as an
-  :class:`xarray.DataArray`, and :meth:`Field.plot` draws it with plasma-plots.
+- `Field.evaluate` returns the field, or a line or plane of it, as an
+  `xarray.DataArray`, and `Field.plot` draws it with plasma-plots.
 
 Positions are component-major, ``(ndim, N)``, and per-marker values ``(ncomp, N)``,
 as the kernels take them.
@@ -30,9 +30,11 @@ import mpiarray as mpa
 import numpy as np
 import scope_profiler as sp
 from maybempi import MPI
+from methodcard import method
 from mpiarray import DistributedArray
 from simgeometry.grid import Grid
 
+from mpifield import _method_checks
 from mpifield._profiling import PROFILE_TAGS
 from mpifield._types import Array, BlockGrid, Bounds, IndexLike, PathLikeStr
 from mpifield.weighting import LINEAR, Weighting
@@ -65,9 +67,9 @@ class Field(Grid):
     ``lower_bound`` to ``upper_bound`` on a bounded axis;
     on a periodic axis the last node neighbours the first, so there are
     ``num_gridpoints`` cells over the length. ``comm`` and ``domain_decomposition``
-    split the grid axes over the ranks as :class:`simgeometry.grid.Grid` does; each
+    split the grid axes over the ranks as `simgeometry.grid.Grid` does; each
     rank stores its block with ``num_ghost_points`` halo nodes on every side
-    (:attr:`local_with_halos`). Without ``comm`` every rank holds the whole field.
+    (`local_with_halos`). Without ``comm`` every rank holds the whole field.
 
     Examples:
     --------
@@ -148,7 +150,7 @@ class Field(Grid):
     def _make_block_grid(
         self, layout: mpa.Layout, cpu: bool, inside_domain: bool
     ) -> BlockGrid:
-        """Compute :meth:`block_grid`."""
+        """Compute `block_grid`."""
         ndim = self.ndim
         halo = layout.halo[:ndim]
         flags = _periodic_flags(self.periodic, ndim)
@@ -199,23 +201,37 @@ class Field(Grid):
             ),
         )
 
+    @method(
+        equations={
+            r"nodes": r"x_{d,k} = x^{\mathrm{lo}}_d + k\, h_d, \qquad h_d = \frac{x^{\mathrm{hi}}_d - x^{\mathrm{lo}}_d}{N_d - 1} \text{ (bounded)}, \quad h_d = \frac{x^{\mathrm{hi}}_d - x^{\mathrm{lo}}_d}{N_d} \text{ (periodic)}",
+            r"lower": r"x^{\mathrm{lo}}_{\mathrm{block},d} = x^{\mathrm{lo}}_d + (s_d - n_h + \ell_d)\, h_d, \qquad \ell_d = n_h \text{ at a bounded lower domain edge}, \ 0 \text{ otherwise}",
+            r"count": r"N_{\mathrm{block},d} = n_d + 2 n_h - n_h\,[\text{bounded lower edge}] - n_h\,[\text{bounded upper edge}]",
+            r"periodic": r"\mathrm{periodic}_{\mathrm{block},d} = \mathrm{periodic}_d \wedge (n_h = 0)",
+        },
+        assumptions=(
+            "$s_d$ the first owned global node, $n_d$ the owned nodes, $n_h$ the halo width; the edge terms only with `inside_domain` (the grid of `scatter` and `gather`)",
+            r"on a periodic axis the last node is one spacing before $x^{\mathrm{hi}}_d$ and neighbours node 0 (simgeometry's `Grid`)",
+            r"with halo nodes the kernels see a bounded block, and the halos hold the wrapped-around nodes: on a split periodic axis the markers must already lie in $[x^{\mathrm{lo}}, x^{\mathrm{hi}})$",
+            "a split field needs at least `weighting.halo` halo nodes",
+        ),
+    )
     def block_grid(self, cpu: bool = False, inside_domain: bool = False) -> BlockGrid:
         """The grid of this rank's stored block (halo nodes included), for the kernels.
 
         Under a spatial decomposition the kernels deposit into and interpolate
-        from :attr:`local_with_halos`, a block of the global grid that starts
+        from `local_with_halos`, a block of the global grid that starts
         ``halo`` nodes before the block's first node. They see it as a grid of
         its own: its lower bound is that node, its node count the stored extent.
         A periodic axis is periodic for the kernels only without halo nodes; with
-        them the halo nodes hold the wrapped-around nodes (:meth:`fill_halos`,
-        :meth:`exchange_halos`). ``cpu`` returns host arrays, for the NumPy and
+        them the halo nodes hold the wrapped-around nodes (`fill_halos`,
+        `exchange_halos`). ``cpu`` returns host arrays, for the NumPy and
         Pyccel kernels. Cached per layout.
 
         With ``inside_domain`` the grid leaves out the halo nodes beyond a bounded
         edge of the domain, which no exchange fills or collects: the kernels then
         clamp there as on an unsplit field, and a stencil wider than a cell
         neither deposits into nor reads from nodes outside the domain. This is the
-        grid of :meth:`scatter` and :meth:`gather`. ``local_with_halos[grid.index]``
+        grid of `scatter` and `gather`. ``local_with_halos[grid.index]``
         is the part of the stored block it describes; without ``inside_domain``
         that is all of it.
         """
@@ -236,7 +252,7 @@ class Field(Grid):
 
         On a spatially decomposed grid each rank holds its own nodes plus one
         halo node on every side, which the deposit accumulates into and the
-        interpolation reads from (:meth:`block_grid`); otherwise, or with
+        interpolation reads from (`block_grid`); otherwise, or with
         ``split=False``, every rank holds the whole grid.
         """
         decomposition = cls._decomposition_of(grid)
@@ -360,10 +376,10 @@ class Field(Grid):
         - a global array of the field's shape ``num_gridpoints + (ncomp,)``, or of
           ``num_gridpoints`` for one ``component`` (or a scalar field): each rank
           copies its own nodes and the halos are zeroed;
-        - a :class:`~mpiarray.DistributedArray` with the same split (the field's
+        - a `DistributedArray` with the same split (the field's
           shape, or the grid's for one ``component``) is copied block by block,
           halo nodes included, without communication;
-        - an array of the stored block's shape (:attr:`local_with_halos`) is copied as is.
+        - an array of the stored block's shape (`local_with_halos`) is copied as is.
         """
         if component is not None and not 0 <= component < self.num_components:
             raise IndexError(
@@ -533,7 +549,7 @@ class Field(Grid):
         """This rank's stored block, halo nodes included: a writable view.
 
         This is the array the kernels read and write, on the grid of
-        :meth:`block_grid`.
+        `block_grid`.
         """
         return self.field_data.local_with_halos
 
@@ -548,14 +564,34 @@ class Field(Grid):
 
     # Halos -------------------------------------------------------------------#
 
+    @method(
+        equations={
+            r"update": r"G^{\mathrm{halo,lo}} \leftarrow G^{\mathrm{interior,hi}}_{\text{left}}, \qquad G^{\mathrm{halo,hi}} \leftarrow G^{\mathrm{interior,lo}}_{\text{right}} \qquad \text{axis by axis}",
+        },
+        assumptions=(
+            "the halo and interior layers along an axis span the whole storage along the others, halos included, so the corner halos are filled too",
+            "one block along a periodic axis: copied locally; at a wall the halos are left unchanged",
+            "collective; before a gather near the edge of a block",
+        ),
+    )
     def fill_halos(self) -> None:
         """Fill the halo nodes from the neighbouring ranks (``update_halos``)."""
         self.field_data.update_halos()
 
+    @method(
+        equations={
+            r"accumulate": r"\rho^{\mathrm{interior,lo}} \mathrel{+}= \rho^{\mathrm{halo,hi}}_{\text{left}}, \qquad \rho^{\mathrm{interior,hi}} \mathrel{+}= \rho^{\mathrm{halo,lo}}_{\text{right}}, \qquad \rho^{\mathrm{halo}} \leftarrow 0 \qquad \text{axis by axis}",
+        },
+        assumptions=(
+            "a value in a corner halo reaches the diagonal neighbour in two steps, so the result equals the serial deposit",
+            "one block along a periodic axis: added locally; at a wall the halo values are dropped (with `inside_domain` nothing was deposited there)",
+            "collective; after a deposit",
+        ),
+    )
     def exchange_halos(self) -> None:
         """Add the halo nodes to their owners on the neighbouring ranks and clear them.
 
-        Call it after a deposit (:meth:`scatter`) into a distributed field.
+        Call it after a deposit (`scatter`) into a distributed field.
         """
         self.field_data.accumulate_halos()
 
@@ -646,6 +682,18 @@ class Field(Grid):
             filtered += weight * padded[tuple(slices)]
         return filtered
 
+    @method(
+        equations={
+            r"filter": r"G^{\mathrm{new}}_k = \sum_{m=-R}^{R} a_m\, G_{k+m}, \qquad a^{\mathrm{binomial}} = \tfrac14 [1, 2, 1], \quad a^{\mathrm{gaussian}} = \tfrac1{16} [1, 4, 6, 4, 1], \quad a^{\mathrm{uniform}} = \tfrac13 [1, 1, 1]",
+            r"boundary": r"G_k = 0 \text{ outside a bounded axis}, \qquad G_{k+N} = G_k \text{ on a periodic axis}",
+        },
+        assumptions=(
+            "separable: the one-dimensional filter along each axis in turn, `passes` times",
+            "the sum is kept on a periodic axis, not near a bounded edge",
+            "under MPI with halos of width $R$ when every block is at least $R$ nodes wide (the same result as on the gathered field), gathered otherwise",
+        ),
+        symbolic=_method_checks.smoothing_rules,
+    )
     @sp.profile("mpifield.Field.smooth", tags=PROFILE_TAGS)
     def smooth(
         self,
@@ -776,13 +824,27 @@ class Field(Grid):
 
     # Derivatives -------------------------------------------------------------#
 
+    @method(
+        equations={
+            r"central": r"(\partial_d G)_k = \frac{G_{k+1} - G_{k-1}}{2 h_d}, \qquad G_{-1} = G_{N-1},\ G_N = G_0 \text{ on a periodic axis}",
+            r"ends": r"(\partial_d G)_0 = \frac{G_1 - G_0}{h_d}, \qquad (\partial_d G)_{N-1} = \frac{G_{N-1} - G_{N-2}}{h_d} \quad \text{(bounded axis)}",
+        },
+        order=2,
+        assumptions=(
+            "a scalar field; second order inside and across a periodic seam, first order at the ends of a bounded axis (`numpy.gradient`, `edge_order=1`)",
+            "the order is checked on a periodic axis",
+            "a distributed field is gathered first, so the result does not depend on the split",
+        ),
+        symbolic=_method_checks.gradient_rules,
+        problem=_method_checks.gradient_problem,
+    )
     @sp.profile("mpifield.Field.gradient", tags=PROFILE_TAGS)
     def gradient(self) -> Self:
         """Return the gradient of a scalar field: a field with ``ndim`` components.
 
         Second-order central differences inside the domain and across a periodic
         seam, first-order one-sided differences at the ends of a bounded axis (as
-        :func:`numpy.gradient`). A distributed field is gathered first (collective),
+        `numpy.gradient`). A distributed field is gathered first (collective),
         so the result does not depend on the split.
         """
         if self.num_components != 1:
@@ -874,7 +936,7 @@ class Field(Grid):
         """Plot the field with plasma-plots and return its ``PlotResult``.
 
         ``x``, ``y``, ``z``, ``component``, ``name`` and ``units`` are as in
-        :meth:`evaluate`. A one-dimensional result is drawn as a line, a
+        `evaluate`. A one-dimensional result is drawn as a line, a
         two-dimensional one as a colour map. A 3D field with no axis fixed is
         shown on its ``z`` midplane. Other keyword arguments (``cmap``, ``vmin``,
         ``title``, ``backend``, ...) go to ``plasma_plots``. Needs the ``plot``
@@ -986,7 +1048,7 @@ class Field(Grid):
             )
 
     def _host_grid(self) -> BlockGrid:
-        """:meth:`block_grid` on the CPU inside the domain, cached for the current layout.
+        """`block_grid` on the CPU inside the domain, cached for the current layout.
 
         Checked by identity, without hashing the layout: the deposit of every step
         takes this path.
@@ -1007,7 +1069,7 @@ class Field(Grid):
         built-in weightings a position outside the grid uses its edge nodes; on a
         periodic axis without halos it wraps around. Under MPI each rank
         interpolates from its own block, so its markers must lie in it, and the
-        halo nodes must be filled (:meth:`fill_halos`) for markers near its edge.
+        halo nodes must be filled (`fill_halos`) for markers near its edge.
         """
         self._check_halo(weighting)
         positions = self._marker_positions(positions)
@@ -1041,7 +1103,7 @@ class Field(Grid):
         ``positions`` has shape ``(ndim, N)`` and ``values`` ``(ncomp, N)``; a 1-D
         ``values`` of length ``N`` is one component, a number is the same value
         for every marker. The values are added to the stored block, halo nodes
-        included; under MPI call :meth:`exchange_halos` afterwards. A marker with
+        included; under MPI call `exchange_halos` afterwards. A marker with
         a zero value contributes nothing, whatever its position.
         """
         self._check_halo(weighting)
@@ -1260,7 +1322,7 @@ class Field(Grid):
         num_ghost_points: int = 0,
         domain_decomposition: Any = None,
     ) -> Self:
-        """Read a field written by :meth:`export`, split as the arguments say."""
+        """Read a field written by `export`, split as the arguments say."""
         import xarray as xr
 
         with xr.open_dataarray(file_path) as array:

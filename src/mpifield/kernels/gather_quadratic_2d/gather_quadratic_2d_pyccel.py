@@ -2,7 +2,7 @@
 
 The Pyccel version (CPU) of the ``gather_quadratic_2d`` kernel; ``gather_quadratic_2d_cuda.cu`` next to
 this file is the CUDA version (GPU), with the same arguments.  Both are loaded
-by :mod:`mpifield.kernels.catalog`; this file is compiled with Pyccel there.
+by `mpifield.kernels.catalog`; this file is compiled with Pyccel there.
 
 The transpose of ``scatter_quadratic_2d``: each marker reads its nearest node and
 the two around it along each axis (``quadratic_cell.cuh``). With OpenMP the

@@ -2,7 +2,7 @@
 
 The Pyccel version (CPU) of the ``gather_linear_3d`` kernel; ``gather_linear_3d_cuda.cu`` next to
 this file is the CUDA version (GPU), with the same arguments.  Both are loaded
-by :mod:`mpifield.kernels.catalog`; this file is compiled with Pyccel there.
+by `mpifield.kernels.catalog`; this file is compiled with Pyccel there.
 """
 
 

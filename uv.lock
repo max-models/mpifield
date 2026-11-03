@@ -2310,6 +2310,23 @@ wheels = [
 ]
 
 [[package]]
+name = "methodcard"
+version = "0.1.0"
+source = { git = "https://github.com/max-models/methodcard?branch=devel#cc1c7bd98faefc860c3dee8b8843045c69990430" }
+dependencies = [
+    { name = "griffe" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "scope-profiler" },
+]
+
+[package.optional-dependencies]
+symbolic = [
+    { name = "sympy" },
+]
+
+[[package]]
 name = "mistune"
 version = "3.3.4"
 source = { registry = "https://pypi.org/simple" }
@@ -2436,6 +2453,7 @@ source = { editable = "." }
 dependencies = [
     { name = "cunumpy" },
     { name = "maybempi" },
+    { name = "methodcard" },
     { name = "mpiarray" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
@@ -2458,6 +2476,7 @@ dev = [
     { name = "jupyterlab" },
     { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "matplotlib", version = "3.11.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "methodcard", extra = ["symbolic"] },
     { name = "nbclient" },
     { name = "nbformat" },
     { name = "plasma-plots" },
@@ -2496,6 +2515,7 @@ plot = [
 test = [
     { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "matplotlib", version = "3.11.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "methodcard", extra = ["symbolic"] },
     { name = "plasma-plots" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -2512,6 +2532,8 @@ requires-dist = [
     { name = "matplotlib", marker = "extra == 'docs'", specifier = ">=3.10.9" },
     { name = "matplotlib", marker = "extra == 'plot'", specifier = ">=3.10" },
     { name = "maybempi", git = "https://github.com/max-models/maybempi?branch=devel" },
+    { name = "methodcard", git = "https://github.com/max-models/methodcard?branch=devel" },
+    { name = "methodcard", extras = ["symbolic"], marker = "extra == 'test'", git = "https://github.com/max-models/methodcard?branch=devel" },
     { name = "mlx", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'metal'" },
     { name = "mpi4py", marker = "extra == 'mpi'" },
     { name = "mpiarray", git = "https://github.com/max-models/mpiarray?branch=devel" },

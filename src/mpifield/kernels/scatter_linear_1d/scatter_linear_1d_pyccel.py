@@ -2,7 +2,7 @@
 
 The Pyccel version (CPU) of the ``scatter_linear_1d`` kernel; ``scatter_linear_1d_cuda.cu`` next to
 this file is the CUDA version (GPU), with the same arguments.  Both are loaded
-by :mod:`mpifield.kernels.catalog`; this file is compiled with Pyccel there.
+by `mpifield.kernels.catalog`; this file is compiled with Pyccel there.
 
 With OpenMP the markers are split over the threads, each depositing into its own
 copy of the grid, and the copies are summed into ``field``: no atomic updates, and

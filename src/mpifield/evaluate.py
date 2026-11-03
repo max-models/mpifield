@@ -6,6 +6,9 @@ from typing import TYPE_CHECKING, Any
 
 import cunumpy as xp
 import numpy as np
+from methodcard import method
+
+from mpifield import _method_checks
 
 if TYPE_CHECKING:
     import xarray as xr
@@ -50,6 +53,18 @@ def _check_coordinate(
     return float(values) if np.ndim(values) == 0 else values
 
 
+@method(
+    equations={
+        r"linear": r"G(x) = (1 - t)\, G_k + t\, G_{k+1}, \qquad t = \frac{x - x_k}{h}, \quad x_k \le x \le x_{k+1}, \qquad \text{multilinear in several axes}",
+        r"seam": r"G(x^{\mathrm{hi}}) = G_0 \text{ on a periodic axis}",
+        r"bounds": r"x \leftarrow \mathrm{clamp}(x, x^{\mathrm{lo}}, x^{\mathrm{hi}}) \text{ if } x^{\mathrm{lo}} - \epsilon \le x \le x^{\mathrm{hi}} + \epsilon, \qquad \epsilon = 10^{-12} \max\left(|x^{\mathrm{lo}}|, |x^{\mathrm{hi}}|, x^{\mathrm{hi}} - x^{\mathrm{lo}}\right)",
+    },
+    assumptions=(
+        "xarray's linear `interp` on the gathered field, whatever weighting the field is used with",
+        "coordinates farther outside the domain, or not finite, raise `ValueError`",
+    ),
+    symbolic=_method_checks.evaluation_rules,
+)
 def evaluate_field(
     field: Field,
     coordinates: dict[str, Any],

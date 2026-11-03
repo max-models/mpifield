@@ -1,12 +1,12 @@
 """Weightings: how marker values are deposited onto the nodes and gathered back.
 
-A :class:`Weighting` pairs a scatter (deposit) kernel and a gather (interpolation)
+A `Weighting` pairs a scatter (deposit) kernel and a gather (interpolation)
 kernel for each number of dimensions it covers, and says how many halo nodes a
-split field needs for it. :meth:`Field.scatter <mpifield.Field.scatter>` and
-:meth:`Field.gather <mpifield.Field.gather>` take one; built in are
+split field needs for it. `Field.scatter` and
+`Field.gather` take one; built in are
 
-- :data:`LINEAR`: cloud-in-cell, two nodes per axis (the default);
-- :data:`QUADRATIC`: the quadratic B-spline ("triangular-shaped cloud"), three
+- `LINEAR`: cloud-in-cell, two nodes per axis (the default);
+- `QUADRATIC`: the quadratic B-spline ("triangular-shaped cloud"), three
   nodes per axis, the nearest node and its neighbours.
 
 The gather of a weighting is the transpose of its scatter, so that
@@ -20,7 +20,7 @@ The kernel convention: a weighting's kernels for ``ndim`` axes are called as::
     gather(positions, field, result, *geometry)    # overwrites result
 
 with ``geometry = (*lower, *cell_size, *num_nodes, *periodic)``
-(:attr:`BlockGrid.geometry <mpifield.BlockGrid>`: ``ndim`` floats, ``ndim``
+(`BlockGrid.geometry`: ``ndim`` floats, ``ndim``
 floats, ``ndim`` ints, ``ndim`` ints 0 or 1). Node ``k`` of axis ``d`` is at
 ``lower[d] + k * cell_size[d]``; on a periodic axis the last node neighbours the
 first. ``positions`` is ``(ndim, N)``, ``values`` and ``result`` ``(ncomp, N)``,
@@ -28,7 +28,7 @@ first. ``positions`` is ``(ndim, N)``, ``values`` and ``result`` ``(ncomp, N)``,
 arrays. ``field`` is C-contiguous; the marker arrays are C-ordered but may have
 gaps between rows (``storage[:, :n]``). A marker whose values are all zero (a dead
 one left in storage) should deposit nothing and not read its position, which may
-be non-finite. A :class:`cunumpy.kernels.Kernel` made with ``from_folder`` fits:
+be non-finite. A `cunumpy.kernels.Kernel` made with ``from_folder`` fits:
 it runs its CUDA version on CuPy arrays and its Pyccel or NumPy version on NumPy
 ones. So does a plain Python function.
 """
@@ -42,7 +42,9 @@ from types import MappingProxyType
 from typing import Any
 
 import cunumpy as xp
+from methodcard import method
 
+from mpifield import _method_checks
 from mpifield._types import Array, BlockGrid
 from mpifield.kernels.gather_linear_1d import kernel as gather_linear_1d
 from mpifield.kernels.gather_linear_2d import kernel as gather_linear_2d
@@ -73,6 +75,24 @@ def _frozen(kernels: Mapping[int, KernelFunction], role: str) -> Mapping[int, An
     return MappingProxyType(dict(kernels))
 
 
+@method(
+    equations={
+        r"adjoint": r"\sum_i q_i\, g(\mathbf x_i) = \sum_i q_i \sum_{\mathbf k} W_{\mathbf k}(\mathbf x_i)\, G_{\mathbf k} = \sum_{\mathbf k} G_{\mathbf k}\, \rho_{\mathbf k}",
+        r"halo": r"n_{\mathrm{halo}} = \left\lfloor \frac{s + 1}{2} \right\rfloor \text{ for } s \text{ nodes per axis: 1 for LINEAR, 2 for QUADRATIC}",
+    },
+    assumptions=(
+        "the gather computes the same nodes and weights as the scatter, with the same folds at bounded edges and wraps at periodic seams, so it is the transpose of the scatter",
+        "a symmetric field solver, for the momentum to be kept (no self-force)",
+        "a rank owns the markers from its first node up to the next rank's first node; a quadratic marker there reaches two nodes beyond its last owned node",
+    ),
+    references=(
+        "[Birdsall and Langdon, Plasma Physics via Computer Simulation (1991), ch. 8](https://doi.org/10.1201/9781315275048)",
+    ),
+    components=(
+        "mpifield.weighting.Weighting.scatter_block",
+        "mpifield.weighting.Weighting.gather_block",
+    ),
+)
 @dataclass(frozen=True, eq=False, repr=False)
 class Weighting:
     """A deposit and its gather, for each number of dimensions they cover.
@@ -121,6 +141,27 @@ class Weighting:
         """Return the gather kernel for ``ndim`` dimensions."""
         return self._kernel(self.gather, ndim, "gather")
 
+    @method(
+        equations={
+            r"deposit": r"\rho_{\mathbf k} \mathrel{+}= \sum_i W_{\mathbf k}(\mathbf x_i)\, q_i, \qquad W_{\mathbf k}(\mathbf x) = \prod_d w(r_d - k_d), \qquad r_d = \frac{x_d - x^{\mathrm{lo}}_d}{h_d}",
+            r"linear_2d": r"W_{i,j} = (1 - f_x)(1 - f_y), \quad W_{i+1,j} = f_x (1 - f_y), \quad W_{i,j+1} = (1 - f_x) f_y, \quad W_{i+1,j+1} = f_x f_y",
+            r"total": r"\sum_{\mathbf k} \rho_{\mathbf k} = \sum_i q_i",
+        },
+        assumptions=(
+            r"no division by the cell volume: a density is the deposit divided by $\prod_d h_d$, by the caller",
+            "a marker whose values are all zero is skipped before its position is read",
+            "the total holds at bounded edges too, where the weights fold onto the edge nodes",
+            "CPU threads deposit contiguous chunks of markers into buffers of their own, summed in thread order: no atomics, reproducible for a given thread count; CUDA uses atomic adds, Metal float32",
+        ),
+        references=(
+            "[Birdsall and Langdon, Plasma Physics via Computer Simulation (1991), ch. 8](https://doi.org/10.1201/9781315275048)",
+        ),
+        components=(
+            "mpifield.kernels.linear_cell.linear_cell",
+            "mpifield.kernels.quadratic_cell.quadratic_cell",
+        ),
+        symbolic=_method_checks.scatter_rules,
+    )
     def scatter_block(
         self, positions: Array, values: Array, field: Array, grid: BlockGrid
     ) -> None:
@@ -140,6 +181,24 @@ class Weighting:
         with xp.kernels.kernel_output(field, like=field, dtype=float) as buffer:
             kernel(positions, values, buffer, *grid.geometry)
 
+    @method(
+        equations={
+            r"gather": r"g(\mathbf x_i) = \sum_{\mathbf k} W_{\mathbf k}(\mathbf x_i)\, G_{\mathbf k}, \qquad W_{\mathbf k}(\mathbf x) = \prod_d w(r_d - k_d)",
+            r"quadratic_3d": r"W_{c_x, c_y, c_z} = \prod_d \left(\tfrac34 - \delta_d^2\right), \qquad \delta_d = r_d - c_d",
+        },
+        assumptions=(
+            "overwrites the result; reads every position, also of markers whose values are zero",
+            "the same nodes and weights as the scatter (its transpose)",
+        ),
+        references=(
+            "[Birdsall and Langdon, Plasma Physics via Computer Simulation (1991), ch. 8](https://doi.org/10.1201/9781315275048)",
+        ),
+        components=(
+            "mpifield.kernels.linear_cell.linear_cell",
+            "mpifield.kernels.quadratic_cell.quadratic_cell",
+        ),
+        symbolic=_method_checks.gather_rules,
+    )
     def gather_block(
         self, positions: Array, field: Array, result: Array, grid: BlockGrid
     ) -> None:
@@ -237,7 +296,7 @@ LINEAR = Weighting(
 #: Quadratic B-spline weights ("triangular-shaped cloud"): each marker on its
 #: nearest node and the two around it, with weights ``(1/2 - d)^2 / 2``,
 #: ``3/4 - d^2`` and ``(1/2 + d)^2 / 2`` for the offset ``d`` (in cells) from the
-#: nearest node. Smoother than :data:`LINEAR` (continuous first derivative, less
+#: nearest node. Smoother than `LINEAR` (continuous first derivative, less
 #: aliasing noise) for 3^ndim nodes per marker instead of 2^ndim. On a bounded
 #: axis a position is clamped to the grid and a stencil node past the edge falls
 #: on the edge node: the deposit keeps all the charge, the gather extrapolates flat.

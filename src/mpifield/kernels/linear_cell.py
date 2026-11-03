@@ -6,9 +6,37 @@ arithmetic as their Pyccel and CUDA versions.
 
 from __future__ import annotations
 
+from functools import partial
+
 import numpy as np
+from methodcard import method
+
+from mpifield import _method_checks
 
 
+@method(
+    equations={
+        r"shape": r"w_1(\xi) = \begin{cases} 1 - |\xi| & |\xi| \le 1 \\ 0 & \text{otherwise} \end{cases}, \qquad W_{\mathbf k}(\mathbf x) = \prod_d w_1(r_d - k_d), \qquad r_d = \frac{x_d - x^{\mathrm{lo}}_d}{h_d}",
+        r"weights": r"k = \lfloor r \rfloor, \quad f = r - k \in [0, 1], \qquad W_k = 1 - f, \quad W_{k+1} = f",
+        r"partition": r"\sum_k W_k = 1",
+        r"first_moment": r"\sum_k W_k\, k = r",
+        r"bounded": r"k = \mathrm{clamp}(\lfloor r \rfloor, 0, N - 2), \qquad f = \mathrm{clamp}(r - k, 0, 1)",
+        r"periodic": r"r \leftarrow r \bmod N, \qquad k = \lfloor r \rfloor, \qquad k + 1 \to (k + 1) \bmod N",
+    },
+    order=2,
+    assumptions=(
+        "a uniform grid; the weights of several axes are the products of the one-dimensional ones (two nodes per axis, $2^n$ in $n$ dimensions)",
+        "the same arithmetic as the Pyccel kernels (inline) and the CUDA ones (`linear_cell.cuh`); the rules are checked with the compiled gathers",
+        "beyond a bounded edge all the weight is on the edge node: a deposit loses no charge, a gather returns the edge value",
+        "the order is that of the gather of a smooth field in the node spacing $h$",
+    ),
+    references=(
+        "[Birdsall and Langdon, Plasma Physics via Computer Simulation (1991), ch. 8](https://doi.org/10.1201/9781315275048)",
+        "[Hockney and Eastwood, Computer Simulation Using Particles (1988), ch. 5](https://www.routledge.com/products/9781138413375)",
+    ),
+    symbolic=partial(_method_checks.shape_rules, "linear"),
+    problem=partial(_method_checks.gather_problem, "linear"),
+)
 def linear_cell(
     rel: np.ndarray, num_nodes: int, periodic: bool
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
