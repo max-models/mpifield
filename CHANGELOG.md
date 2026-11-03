@@ -16,6 +16,12 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `Field.deposit_density(positions, values, weighting=LINEAR)`: adds the deposit of the
+  marker values divided by the node volumes, with the halo exchange on a split field; with
+  the products `w`, `w v`, `w v^2`, ... as components it gives the velocity moments.
+  Example 14 derives the flow, temperature and heat flux from them.
+- `Field.node_volumes()`: the volume each node collects in a deposit, half a cell on a bounded
+  edge. `Field.on_grid` takes `num_ghost_points` (default 1).
 - Method cards (methodcard) on the numerics: the linear and quadratic shape functions
   (`linear_cell`, `quadratic_cell`), the deposit and the gather (`Weighting.scatter_block`,
   `Weighting.gather_block`) and their adjointness (`Weighting`), the block grid and the halo

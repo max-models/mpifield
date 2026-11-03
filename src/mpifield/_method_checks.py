@@ -388,3 +388,26 @@ def evaluation_rules() -> dict[str, Rule]:
 
     rule = g3 + (g0 - g3) * (x - sympy.Rational(3, 4)) * 4
     return {"seam": Rule(rule, seam, {"x": (0.75, 1.0)})}
+
+
+def density_rules() -> dict[str, Rule]:
+    """The rule of the density deposit, with the compiled linear scatter.
+
+    - ``total``: two markers, one in the boundary cell of a bounded axis; the
+      density times the node volumes sums to their values.
+    """
+    import sympy
+
+    q1, q2 = sympy.symbols("q_1 q_2", real=True)
+
+    def total(q_1: float, q_2: float) -> float:
+        from mpifield.field import Field
+
+        field = Field(
+            ndim=1, lower_bound=(0.0,), upper_bound=(1.0,), num_gridpoints=NODES
+        )
+        field.deposit_density(np.array([[0.03, 0.61]]), np.array([[q_1, q_2]]))
+        volumes = field.node_volumes().to_numpy()
+        return float((field.to_numpy() * volumes).sum())
+
+    return {"total": Rule(q1 + q2, total, {"q_1": (-2.0, 2.0)}, rtol=1e-12)}

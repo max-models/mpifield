@@ -520,3 +520,44 @@ def test_export_and_load_under_mpi(tmp_path_factory: pytest.TempPathFactory) -> 
     )
 
     np.testing.assert_array_equal(loaded.to_numpy()[..., 0], global_data)
+
+
+@pytest.mark.parametrize(
+    ("decomposition", "periodic"),
+    [([True, False], (False, False)), ([True, True], (True, False))],
+)
+@pytest.mark.parametrize("weighting", [LINEAR, QUADRATIC], ids=lambda w: w.name)
+def test_split_density_equals_the_serial_one(
+    weighting, decomposition, periodic
+) -> None:
+    """Each rank deposits the density of its own markers; the result is the serial one."""
+    comm = MPI.COMM_WORLD
+    rng = np.random.default_rng(21)
+    positions = rng.uniform(-0.05, 1.05, (2, 3000))
+    for axis, flag in enumerate(periodic):
+        if flag:
+            positions[axis] %= 1.0
+    values = rng.normal(0.2, 1.0, (3, 3000))
+    kwargs = {
+        "ndim": 2,
+        "lower_bound": (0.0, 0.0),
+        "upper_bound": (1.0, 1.0),
+        "num_gridpoints": (24, 20),
+        "num_components": 3,
+        "periodic": periodic,
+    }
+    serial = Field(**kwargs)
+    serial.deposit_density(positions, values, weighting)
+    grid = Field(comm=comm, domain_decomposition=decomposition, **kwargs)
+    field = Field.on_grid(grid, num_components=3, num_ghost_points=weighting.halo)
+    assert field.distributed == (comm.Get_size() > 1)
+    mine = _own_markers(field, positions)
+    assert comm.allreduce(int(mine.sum())) == positions.shape[1]
+    own = np.ascontiguousarray(positions[:, mine])
+    field.deposit_density(own, np.ascontiguousarray(values[:, mine]), weighting)
+    # signed values cancel between markers: compare to the scale of the density
+    expected = serial.to_numpy()
+    scale = np.abs(expected).max(axis=(0, 1))
+    np.testing.assert_allclose(field.to_numpy() / scale, expected / scale, atol=1e-12)
+    volumes = field.node_volumes().to_numpy()
+    np.testing.assert_allclose(volumes, serial.node_volumes().to_numpy(), rtol=1e-14)
