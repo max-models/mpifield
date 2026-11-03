@@ -25,6 +25,8 @@ dependencies = [
   "cunumpy>=0.7.2",
   # MPI only under an MPI launcher (mpirun, srun); a serial stand-in for mpi4py otherwise
   "maybempi>=0.1.2",
+  # the method cards of the numerical methods (equations, orders, references)
+  "methodcard",
   "mpiarray>=0.2.1",
   "numpy",
   # the CPU kernels: compiled on first use; their sources import Pyccel's OpenMP module
@@ -56,7 +58,7 @@ optional-dependencies.metal = [ "mlx; sys_platform == 'darwin' and platform_mach
 optional-dependencies.mpi = [ "mpi4py" ]
 # Field.plot draws with plasma-plots
 optional-dependencies.plot = [ "matplotlib>=3.10", "plasma-plots>=0.2.5" ]
-optional-dependencies.test = [ "mpifield[plot]", "pytest", "pytest-cov", "pytest-mpi" ]
+optional-dependencies.test = [ "methodcard[symbolic]", "mpifield[plot]", "pytest", "pytest-cov", "pytest-mpi" ]
 urls.Source = "https://github.com/max-models/mpifield"
 
 [project.entry-points."scope_profiler.opt_in_tags"]
@@ -97,7 +99,10 @@ reportMissingImports = "error"
 ini_options.pythonpath = [ "src" ]
 ini_options.testpaths = [ "src" ]
 ini_options.addopts = "-ra"
-ini_options.markers = [ "mpi: tests run under mpiexec with --with-mpi (pytest-mpi)" ]
+ini_options.markers = [
+  "convergence: an order-of-accuracy test of a method card",
+  "mpi: tests run under mpiexec with --with-mpi (pytest-mpi)",
+]
 
 [tool.coverage]
 run.omit = [ "*/tests/*" ]
@@ -111,6 +116,7 @@ report.show_missing = true
 # cunumpy = { git = "https://github.com/max-models/cunumpy", branch = "devel" }
 cunumpy = { git = "https://github.com/max-models/cunumpy", branch = "devel" }
 maybempi = { git = "https://github.com/max-models/maybempi", branch = "devel" }
+methodcard = { git = "https://github.com/max-models/methodcard", branch = "devel" }
 mpiarray = { git = "https://github.com/max-models/mpiarray", branch = "devel" }
 plasma-plots = { git = "https://github.com/max-models/plasma-plots", branch = "devel" }
 scope-profiler = { git = "https://github.com/max-models/scope-profiler", branch = "devel" }

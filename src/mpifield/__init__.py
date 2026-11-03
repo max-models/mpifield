@@ -1,11 +1,11 @@
 """Fields on uniform grids split over MPI ranks, with compiled gather and scatter.
 
-:class:`Field` holds a field on the nodes of a uniform 1D, 2D or 3D grid as an
-:class:`mpiarray.DistributedArray`; it interpolates the field at marker positions
-(:meth:`Field.gather`) and deposits marker values onto the nodes
-(:meth:`Field.scatter`) with a :class:`Weighting`: :data:`LINEAR` (the default),
-:data:`QUADRATIC` or one of your own. The built-in ones run compiled kernels of
-:mod:`mpifield.kernels`, on the CPU (Pyccel, NumPy) or the GPU (CUDA, Metal).
+`Field` holds a field on the nodes of a uniform 1D, 2D or 3D grid as an
+`mpiarray.DistributedArray`; it interpolates the field at marker positions
+(`Field.gather`) and deposits marker values onto the nodes
+(`Field.scatter`) with a `Weighting`: `LINEAR` (the default),
+`QUADRATIC` or one of your own. The built-in ones run compiled kernels of
+`mpifield.kernels`, on the CPU (Pyccel, NumPy) or the GPU (CUDA, Metal).
 """
 
 from importlib.metadata import PackageNotFoundError, version

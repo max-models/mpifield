@@ -16,14 +16,14 @@ All versions take the same arguments, so a call site is the same on every device
 
 runs the CUDA version when the arrays live on the GPU (CuPy) and the compiled Pyccel
 version otherwise (``dispatch="arrays"``). The kernel object is a
-:class:`cunumpy.kernels.Kernel`, built in the folder's ``__init__.py`` by
-``KERNEL_PACKAGE.from_folder`` (see :mod:`mpifield.kernels`). Both versions are
+`cunumpy.kernels.Kernel`, built in the folder's ``__init__.py`` by
+``KERNEL_PACKAGE.from_folder`` (see `mpifield.kernels`). Both versions are
 compiled on first use: importing this module needs neither Pyccel nor CuPy. CUDA
 sources include mpifield's header relative to the source root:
 ``#include "mpifield/kernels/linear_cell.cuh"``.
 
 The kernels are the linear (``*_linear_*``) and quadratic (``*_quadratic_*``) deposits
-and gathers of :mod:`mpifield.weighting`. The quadratic ones, and the 1D and 2D linear
+and gathers of `mpifield.weighting`. The quadratic ones, and the 1D and 2D linear
 gathers and the 2D linear deposit, take the arguments of the weighting kernel
 convention; the linear 1D deposit takes one component (``(N,)`` markers, an ``(nx,)``
 grid) and the linear 3D kernels the grid as rows ``(nx * ny * nz, ncomp)``.

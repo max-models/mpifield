@@ -1,0 +1,102 @@
+---
+title: Overview
+description: The numerics of mpifield, from the shape functions of the deposit and the gather to the halo exchange, and what it leaves out.
+sidebar:
+  label: Overview
+---
+
+import MethodCard from '@max-models/starlight-theme/components/MethodCard.astro';
+
+mpifield holds fields on the nodes of a uniform 1D, 2D or 3D grid, split over MPI ranks with halo
+nodes, and moves values between the nodes and the markers of a particle code: a deposit
+(scatter) of marker values onto the nodes and a gather (interpolation) of the field at the
+markers. No field equation is solved; the Poisson or Maxwell solver, the pusher and the time
+integration belong to the codes that use it.
+
+Each equation on these pages is declared on the code that implements it, as a method card, and
+checked by the tests: SymPy rules for the shape functions and the operators, run against the
+compiled kernels, and the order of convergence of the two gathers, the gradient and the
+prescribed field. The pages of the section list the cards module by module; this one shows how
+they fit together.
+
+## Deposit and gather
+
+Node $k$ of axis $d$ is at $x_{d,k} = x^{\mathrm{lo}}_d + k h_d$, and a marker at $\mathbf x$ has
+the relative coordinates $r_d = (x_d - x^{\mathrm{lo}}_d)/h_d$. A weighting gives node
+$\mathbf k$ the weight $W_{\mathbf k}(\mathbf x) = \prod_d w(r_d - k_d)$, a tensor product of
+one-dimensional B-splines:
+
+1. **[Linear weights](/mpifield/numerics/kernels-linear-cell/)** (`LINEAR`, cloud-in-cell),
+   $w_1$, two nodes per axis: the default.
+2. **[Quadratic weights](/mpifield/numerics/kernels-quadratic-cell/)** (`QUADRATIC`,
+   triangular-shaped cloud), $w_2$, three nodes per axis around the nearest one: a continuous
+   first derivative and less aliasing noise, for $3^n$ nodes per marker instead of $2^n$.
+
+Both sum to one over the nodes and reproduce the position as their first moment, so a deposit
+keeps the total value and a gather is exact for constant and linear fields; both gather a
+smooth field to second order in $h$. At a bounded edge the weights beyond it fold onto the edge
+nodes, which keeps the total; a periodic axis wraps.
+
+The **[deposit and the gather](/mpifield/numerics/weighting/)** are a pair: the gather reads
+the nodes and weights the scatter writes, so it is the transpose of the scatter, also at the
+edges and the seams. With a symmetric field solver this keeps the momentum: a particle feels no
+force of its own.
+
+<MethodCard name="mpifield.weighting.Weighting" headingLevel={3} />
+
+The deposit is a sum of weights, not a density: divide it by $\prod_d h_d$ for one.
+
+## Over MPI ranks
+
+Each rank stores its block of the grid with halo nodes, at least as many as the weighting needs
+(one for `LINEAR`, two for `QUADRATIC`). The kernels see the stored block as a grid of its own
+([`Field.block_grid`](/mpifield/numerics/field/)), without the halos beyond a bounded edge of
+the domain. A cycle of a particle code then runs, on every rank:
+
+1. select its own markers (from the block's first node up to the next rank's first node);
+2. deposit them into the stored block, halo nodes included;
+3. `exchange_halos`: add the halos to their owners on the neighbouring ranks;
+4. set the field (a solver outside mpifield);
+5. `fill_halos`: copy the owners' nodes into the halos;
+6. gather the field at its own markers.
+
+The split deposit and gather equal the serial ones.
+
+## Operations on the field
+
+- **[Gradient](/mpifield/numerics/field/)** of a scalar field: central differences, second
+  order, one-sided at the ends of a bounded axis.
+- **[Smoothing](/mpifield/numerics/field/)**: separable binomial, Gaussian or uniform filters,
+  zero outside a bounded axis, wrapped on a periodic one.
+- **[Prescribed fields](/mpifield/numerics/prescribed/)**: $\mathbf E = -\nabla\phi$ of a
+  given potential, e.g. a table along one axis, for test particles.
+- **[Evaluation](/mpifield/numerics/evaluate/)** as xarray: linear interpolation between the
+  nodes, whatever the weighting.
+
+## Conventions
+
+Positions are component-major, `(ndim, N)`, and marker values `(ncomp, N)`; a field is
+`num_gridpoints + (ncomp,)`. On a bounded axis the $N$ nodes span the domain,
+$h = (x^{\mathrm{hi}} - x^{\mathrm{lo}})/(N - 1)$; on a periodic one they cover $N$ cells,
+$h = (x^{\mathrm{hi}} - x^{\mathrm{lo}})/N$, and the last node neighbours the first. The compiled
+kernels (Pyccel with OpenMP, CUDA, a NumPy fallback, Metal in single precision) share the same
+arithmetic.
+
+## Not covered
+
+- No Poisson or Maxwell solver, no particle pusher, no time integration.
+- No normalisation of the deposit by the cell volume or by a species weight.
+- Only the gradient of a scalar field: no divergence or curl.
+- Only linear and quadratic weightings are built in, and no energy-conserving (non-adjoint)
+  schemes; a weighting of your own is a pair of kernels.
+- Markers are not moved between ranks: each rank deposits and gathers its own, and wraps them on
+  a split periodic axis.
+- `electric_field_from_potential` differences one-sided at both ends of every axis, also a
+  periodic one.
+
+## Verification
+
+Besides the checks of the cards, the tests compare the Pyccel, CUDA (emulated) and Metal
+kernels with the NumPy ones, the deposit with the transpose of the gather, the OpenMP deposit
+with the serial one, and, under `mpiexec`, the split deposit, gather, gradient and smoothing
+with those of one rank.

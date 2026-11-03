@@ -2,7 +2,7 @@
 
 The Pyccel version (CPU) of the ``scatter_quadratic_1d`` kernel; ``scatter_quadratic_1d_cuda.cu`` next to
 this file is the CUDA version (GPU), with the same arguments.  Both are loaded
-by :mod:`mpifield.kernels.catalog`; this file is compiled with Pyccel there.
+by `mpifield.kernels.catalog`; this file is compiled with Pyccel there.
 
 Each marker deposits onto its nearest node and the two around it along each axis
 (``quadratic_cell.cuh``). With OpenMP the markers are split over the threads in

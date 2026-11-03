@@ -25,12 +25,12 @@ class Bounds(NamedTuple):
 
 
 class BlockGrid(NamedTuple):
-    """The grid of one rank's stored block, as the kernels see it (:meth:`Field.block_grid`).
+    """The grid of one rank's stored block, as the kernels see it (`Field.block_grid`).
 
     ``geometry`` is the same grid as the kernels' trailing arguments, Python
     scalars: ``(*lower, *cell_size, *num_nodes, *periodic)``, one entry per axis
     each (``periodic`` as 0 or 1). ``index`` selects the nodes of the grid in
-    :attr:`Field.local_with_halos`.
+    `Field.local_with_halos`.
     """
 
     bounds: Bounds
@@ -51,8 +51,8 @@ class BlockGrid(NamedTuple):
         """Return the grid of a whole array of ``num_nodes`` nodes from ``lower`` on.
 
         For running a weighting on an array that is not a field's stored block
-        (:meth:`Weighting.scatter_block`). The arguments may be sequences or
-        arrays on either side (a :meth:`Field.block_grid` on the GPU holds CuPy
+        (`Weighting.scatter_block`). The arguments may be sequences or
+        arrays on either side (a `Field.block_grid` on the GPU holds CuPy
         arrays). ``periodic`` defaults to bounded axes.
         """
         lower = tuple(float(v) for v in lower)

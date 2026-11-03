@@ -1,7 +1,7 @@
 """The Metal version (Apple-silicon GPU, float32) of the ``scatter_linear_1d`` kernel.
 
 ``scatter_linear_1d_pyccel.py`` next to this file is the CPU version with the same
-arguments. One thread per marker; see :mod:`mpifield.kernels._metal_grid`.
+arguments. One thread per marker; see `mpifield.kernels._metal_grid`.
 """
 
 from __future__ import annotations

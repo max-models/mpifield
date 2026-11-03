@@ -2,11 +2,11 @@
 
 Positions ``(ndim, N)`` are turned into cell coordinates ``(x - lower) / cell_size`` on
 the host in float64; the kernels compute the cell and the weights in float32 with
-:data:`CELL_HEADER`, the arithmetic of ``linear_cell.cuh`` (:data:`QUADRATIC_HEADER` and
+`CELL_HEADER`, the arithmetic of ``linear_cell.cuh`` (`QUADRATIC_HEADER` and
 ``quadratic_cell.cuh`` for the quadratic ones). A scatter accumulates
 into a zeroed float32 grid with float atomics (no 64-bit atomics on the Apple GPU),
 which the host adds to the caller's grid in float64: the summation order, hence the
-last bits, differ from the CPU. See :mod:`mpifield.kernels`.
+last bits, differ from the CPU. See `mpifield.kernels`.
 """
 
 from __future__ import annotations
