@@ -4,8 +4,9 @@ name: Pyodide
 # with micropip in Pyodide under Node, every module imported (on the NumPy kernels, since
 # Pyccel cannot be installed there) and the live demo of the docs
 # (docs/src/components/mpifield_demo.py) run, with the shared workflow of
-# max-models/starlight-theme. Every module imports there (the Metal ones only build their
-# kernels on first use), so nothing is skipped.
+# max-models/starlight-theme. The Pyccel sources (`<name>_pyccel.py`) are skipped: they
+# import Pyccel, which is not there, and cunumpy imports them only to compile them.
+# Everything else imports (the Metal modules only build their kernels on first use).
 
 on:
   push:
@@ -17,3 +18,5 @@ on:
 jobs:
   pyodide:
     uses: max-models/starlight-theme/.github/workflows/pyodide.yml@v0
+    with:
+      skip: _pyccel$

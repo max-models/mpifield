@@ -16,40 +16,11 @@ version. The Apple GPU has no float64, so they compute in float32: expect a rela
 error of about 1e-5 against the CPU versions. Import one only where
 `cunumpy.kernels.metal_available` is true.
 
-In the browser (Pyodide) Pyccel cannot be installed (it needs a compiler), so the
-kernels run their NumPy versions; ``_add_openmp_stand_in`` lets the Pyccel sources,
-which import Pyccel's OpenMP module, be imported there.
+In the browser (Pyodide) there is no Pyccel: cunumpy imports a Pyccel source only when its
+version is used, so the kernels import there and run their NumPy versions.
 """
 
-import importlib.util
-import sys
-import types
-from collections.abc import MutableMapping
-
 import cunumpy as xp
-
-
-def _add_openmp_stand_in(modules: MutableMapping[str, types.ModuleType]) -> None:
-    """Add a serial ``pyccel.stdlib.internal.openmp`` (one thread) to ``modules``.
-
-    For a Python without Pyccel, where the Pyccel sources would fail to import;
-    the stand-in has no package metadata, so no kernel tries to compile with it.
-    """
-    openmp = types.ModuleType("pyccel.stdlib.internal.openmp")
-    openmp.omp_get_max_threads = lambda: 1  # type: ignore[attr-defined]
-    openmp.omp_get_thread_num = lambda: 0  # type: ignore[attr-defined]
-    child = openmp
-    for name in ("pyccel.stdlib.internal", "pyccel.stdlib", "pyccel"):
-        package = types.ModuleType(name)
-        package.__path__ = []  # a package, so that its submodules import
-        setattr(package, child.__name__.rpartition(".")[2], child)
-        modules[child.__name__] = child
-        child = package
-    modules[child.__name__] = child
-
-
-if sys.platform == "emscripten" and importlib.util.find_spec("pyccel") is None:
-    _add_openmp_stand_in(sys.modules)
 
 #: The build cache and launch options of mpifield's kernels.
 KERNEL_PACKAGE = xp.kernels.KernelPackage("mpifield")
