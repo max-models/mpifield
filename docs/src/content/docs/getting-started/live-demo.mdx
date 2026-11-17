@@ -1,0 +1,30 @@
+---
+title: Live demo
+description: Deposit markers onto a grid in your browser, with sliders.
+---
+
+import PyodideDemo from '@max-models/starlight-theme/components/PyodideDemo.astro';
+import code from '../../../components/mpifield_demo.py?raw';
+
+This demo runs mpifield in your browser with [Pyodide](https://pyodide.org) (Python compiled to
+WebAssembly), on the NumPy versions of the kernels: there is no compiler in the browser, so
+the Pyccel kernels are not built.
+
+<PyodideDemo
+	code={code}
+	controls={[
+		{ name: 'markers', label: 'Markers', min: 2, max: 5, step: 0.25, value: 10000, log: true },
+		{ name: 'nodes', label: 'Grid nodes', min: 8, max: 128, step: 8, value: 32 },
+		{ name: 'weighting', label: 'Weighting', options: ['linear', 'quadratic'], value: 'linear' },
+		{ name: 'passes', label: 'Smoothing passes', min: 0, max: 4, step: 1, value: 0 },
+	]}
+	caption="The density deposited by Field.deposit_density on a periodic 1D grid, against the exact density 1 + 0.5 cos(x) the markers are drawn from."
+/>
+
+The markers are drawn from the density $n(x) = 1 + 0.5\cos x$ on a periodic domain of length
+$2\pi$, each with the weight $2\pi/N$, and deposited onto the grid nodes with the linear
+(cloud-in-cell) or the quadratic weighting; the binomial filter `[1, 2, 1] / 4` smooths the
+result. The total weight is conserved exactly, whatever the settings. The deposit is noisy, by
+about $\sqrt{\text{nodes}/N}$ per node: more markers or fewer nodes reduce the noise, and the
+quadratic weighting and the smoothing damp it further, at the price of flattening the peak
+when the grid is coarse.

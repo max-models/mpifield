@@ -28,9 +28,12 @@ jobs:
       extras: docs mpi
       apt-packages: "libopenmpi-dev openmpi-bin"
       pre-build: uv run python docs/tools/examples.py
+      # the live demo: the wheels of mpifield and its devel dependencies for Pyodide
+      pyodide: true
       smoke-paths: |
         getting-started/installation/index.html
         getting-started/quickstart/index.html
+        getting-started/live-demo/index.html
         examples/index.html
         examples/getting-started/index.html
         examples/mpi-and-halos/index.html

@@ -29,8 +29,9 @@ dependencies = [
   "methodcard",
   "mpiarray>=0.2.1",
   "numpy",
-  # the CPU kernels: compiled on first use; their sources import Pyccel's OpenMP module
-  "pyccel>2.0",
+  # the CPU kernels: compiled on first use; their sources import Pyccel's OpenMP module.
+  # Not in the browser (Pyodide): Pyccel has no wheel there, the NumPy kernels run instead
+  "pyccel>2.0; sys_platform != 'emscripten'",
   # xarray's linear interpolation in Field.evaluate
   "scipy",
   "scope-profiler>=0.7.5",

@@ -10,14 +10,18 @@ from __future__ import annotations
 
 import ast
 import importlib
+import importlib.util
 import re
+import sys
 from pathlib import Path
+from unittest import mock
 
 import cunumpy as xp
 import numpy as np
 import pytest
 
 from mpifield import LINEAR, QUADRATIC, Field
+from mpifield.kernels import _add_openmp_stand_in
 from mpifield.kernels.catalog import KERNEL_NAMES, KERNELS, metal_kernel
 
 
@@ -170,3 +174,23 @@ def test_deposit_and_gather_are_transposes(ndim, periodic, weighting):
     assert np.dot(gathered, charges) == pytest.approx(
         float(np.sum(field.local_with_halos * density.local_with_halos)), rel=1e-12
     )
+
+
+@pytest.mark.parametrize("name", KERNEL_NAMES)
+def test_pyccel_sources_import_with_the_openmp_stand_in(name):
+    """In the browser there is no Pyccel: the stand-in OpenMP module runs one thread."""
+    modules = {
+        key: module
+        for key, module in sys.modules.items()
+        if key != "pyccel" and not key.startswith("pyccel.")
+    }
+    _add_openmp_stand_in(modules)
+    openmp = modules["pyccel"].stdlib.internal.openmp
+    assert modules["pyccel.stdlib.internal.openmp"] is openmp
+    assert (openmp.omp_get_max_threads(), openmp.omp_get_thread_num()) == (1, 0)
+    path = _folder(name) / f"{name}_pyccel.py"
+    spec = importlib.util.spec_from_file_location(f"_stand_in_{name}", path)
+    module = importlib.util.module_from_spec(spec)
+    with mock.patch.dict(sys.modules, modules, clear=True):
+        spec.loader.exec_module(module)
+    assert callable(getattr(module, name))
