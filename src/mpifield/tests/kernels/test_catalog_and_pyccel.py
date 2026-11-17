@@ -181,14 +181,24 @@ def test_kernels_import_and_run_numpy_without_pyccel():
     code = textwrap.dedent(
         """
         import importlib.abc
+        import importlib.metadata
         import sys
 
+        # no Pyccel at all, as in Pyodide: neither its modules nor its installed metadata
         class NoPyccel(importlib.abc.MetaPathFinder):
             def find_spec(self, name, path=None, target=None):
                 if name.split(".")[0] == "pyccel":
                     raise ModuleNotFoundError(f"No module named {name!r}")
 
         sys.meta_path.insert(0, NoPyccel())
+        version = importlib.metadata.version
+
+        def no_pyccel_version(name):
+            if name == "pyccel":
+                raise importlib.metadata.PackageNotFoundError(name)
+            return version(name)
+
+        importlib.metadata.version = no_pyccel_version
         from mpifield.kernels.catalog import KERNEL_NAMES, KERNELS
 
         for name in KERNEL_NAMES:
