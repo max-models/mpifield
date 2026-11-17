@@ -12,16 +12,16 @@ import ast
 import importlib
 import importlib.util
 import re
+import subprocess
 import sys
+import textwrap
 from pathlib import Path
-from unittest import mock
 
 import cunumpy as xp
 import numpy as np
 import pytest
 
 from mpifield import LINEAR, QUADRATIC, Field
-from mpifield.kernels import _add_openmp_stand_in
 from mpifield.kernels.catalog import KERNEL_NAMES, KERNELS, metal_kernel
 
 
@@ -176,21 +176,27 @@ def test_deposit_and_gather_are_transposes(ndim, periodic, weighting):
     )
 
 
-@pytest.mark.parametrize("name", KERNEL_NAMES)
-def test_pyccel_sources_import_with_the_openmp_stand_in(name):
-    """In the browser there is no Pyccel: the stand-in OpenMP module runs one thread."""
-    modules = {
-        key: module
-        for key, module in sys.modules.items()
-        if key != "pyccel" and not key.startswith("pyccel.")
-    }
-    _add_openmp_stand_in(modules)
-    openmp = modules["pyccel"].stdlib.internal.openmp
-    assert modules["pyccel.stdlib.internal.openmp"] is openmp
-    assert (openmp.omp_get_max_threads(), openmp.omp_get_thread_num()) == (1, 0)
-    path = _folder(name) / f"{name}_pyccel.py"
-    spec = importlib.util.spec_from_file_location(f"_stand_in_{name}", path)
-    module = importlib.util.module_from_spec(spec)
-    with mock.patch.dict(sys.modules, modules, clear=True):
-        spec.loader.exec_module(module)
-    assert callable(getattr(module, name))
+def test_kernels_import_and_run_numpy_without_pyccel():
+    """In the browser there is no Pyccel: every kernel imports and runs its NumPy version."""
+    code = textwrap.dedent(
+        """
+        import importlib.abc
+        import sys
+
+        class NoPyccel(importlib.abc.MetaPathFinder):
+            def find_spec(self, name, path=None, target=None):
+                if name.split(".")[0] == "pyccel":
+                    raise ModuleNotFoundError(f"No module named {name!r}")
+
+        sys.meta_path.insert(0, NoPyccel())
+        from mpifield.kernels.catalog import KERNEL_NAMES, KERNELS
+
+        for name in KERNEL_NAMES:
+            kernel = KERNELS[name]
+            host = kernel.host_kernel.kernel
+            assert host.selected() == "numpy", (name, host.errors)
+            assert kernel.host_parameters(), name
+        assert not any(key.split(".")[0] == "pyccel" for key in sys.modules)
+        """
+    )
+    subprocess.run([sys.executable, "-c", code], check=True)

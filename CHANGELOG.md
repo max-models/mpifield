@@ -22,9 +22,9 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (`docs/src/components/mpifield_demo.py`, starlight-theme's `PyodideDemo`). A Pyodide
   workflow checks that every module imports in the browser and that the demo runs.
 - mpifield installs in the browser (Pyodide): Pyccel, which has no wheel there, is not a
-  dependency on `sys_platform == 'emscripten'`, and a serial stand-in for Pyccel's OpenMP
-  module lets the Pyccel kernel sources import without it; the kernels run their NumPy
-  versions.
+  dependency on `sys_platform == 'emscripten'`, and the kernels run their NumPy versions
+  (cunumpy 0.8.0 imports a Pyccel source only when its version is used). Needs
+  `cunumpy>=0.8.0`.
 - `Field.deposit_density(positions, values, weighting=LINEAR)`: adds the deposit of the
   marker values divided by the node volumes, with the halo exchange on a split field; with
   the products `w`, `w v`, `w v^2`, ... as components it gives the velocity moments.
