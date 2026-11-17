@@ -1,0 +1,19 @@
+name: Pyodide
+
+# That mpifield runs in the browser: its wheel and those of its devel dependencies installed
+# with micropip in Pyodide under Node, every module imported (on the NumPy kernels, since
+# Pyccel cannot be installed there) and the live demo of the docs
+# (docs/src/components/mpifield_demo.py) run, with the shared workflow of
+# max-models/starlight-theme. Every module imports there (the Metal ones only build their
+# kernels on first use), so nothing is skipped.
+
+on:
+  push:
+    branches: ["main", "devel"]
+  pull_request:
+    branches: ["main", "devel"]
+  workflow_dispatch:
+
+jobs:
+  pyodide:
+    uses: max-models/starlight-theme/.github/workflows/pyodide.yml@v0

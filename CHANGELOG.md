@@ -16,6 +16,15 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- A live demo in the docs (Getting started, Live demo): markers deposited onto a 1D grid with
+  `Field.deposit_density`, run in the browser with Pyodide on the NumPy kernels, with sliders
+  for the markers, the nodes, the weighting and the smoothing
+  (`docs/src/components/mpifield_demo.py`, starlight-theme's `PyodideDemo`). A Pyodide
+  workflow checks that every module imports in the browser and that the demo runs.
+- mpifield installs in the browser (Pyodide): Pyccel, which has no wheel there, is not a
+  dependency on `sys_platform == 'emscripten'`, and a serial stand-in for Pyccel's OpenMP
+  module lets the Pyccel kernel sources import without it; the kernels run their NumPy
+  versions.
 - `Field.deposit_density(positions, values, weighting=LINEAR)`: adds the deposit of the
   marker values divided by the node volumes, with the halo exchange on a split field; with
   the products `w`, `w v`, `w v^2`, ... as components it gives the velocity moments.
