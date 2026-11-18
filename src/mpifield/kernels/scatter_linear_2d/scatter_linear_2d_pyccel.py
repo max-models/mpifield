@@ -21,6 +21,13 @@ and is folded back in the sum. Few markers are deposited serially.
 import numpy as np
 from pyccel.stdlib.internal.openmp import omp_get_max_threads, omp_get_thread_num
 
+from mpifield.kernels.linear_cell_pyccel import (
+    cell_fraction,
+    left_node,
+    periodic_position,
+    right_node,
+)
+
 # Fewest markers worth the per-thread buffers.
 MIN_PARALLEL_MARKERS = 20000
 
@@ -72,42 +79,17 @@ def _scatter_chunk_2d(
         rel_x = (positions[0, marker] - lower_x) * inverse_x
         rel_y = (positions[1, marker] - lower_y) * inverse_y
         if periodic_x == 1:
-            if not (rel_x >= 0.0 and rel_x < num_x):
-                rel_x = rel_x - num_x * (rel_x // num_x)
-            i_left = int(rel_x)
-            if i_left >= num_x:
-                i_left = num_x - 1
-        else:
-            i_left = int(rel_x) if rel_x >= 0.0 else 0
-            if i_left > num_x - 2:
-                i_left = num_x - 2
+            rel_x = periodic_position(rel_x, num_x)
+        i_left = left_node(rel_x, num_x, periodic_x)
         i_right = i_left + 1
         if wrap == 1 and i_right == num_x:
             i_right = 0
         if periodic_y == 1:
-            if not (rel_y >= 0.0 and rel_y < num_y):
-                rel_y = rel_y - num_y * (rel_y // num_y)
-            j_left = int(rel_y)
-            if j_left >= num_y:
-                j_left = num_y - 1
-            j_right = j_left + 1
-            if j_right == num_y:
-                j_right = 0
-        else:
-            j_left = int(rel_y) if rel_y >= 0.0 else 0
-            if j_left > num_y - 2:
-                j_left = num_y - 2
-            j_right = j_left + 1
-        fx = rel_x - i_left
-        if fx < 0.0:
-            fx = 0.0
-        if fx > 1.0:
-            fx = 1.0
-        fy = rel_y - j_left
-        if fy < 0.0:
-            fy = 0.0
-        if fy > 1.0:
-            fy = 1.0
+            rel_y = periodic_position(rel_y, num_y)
+        j_left = left_node(rel_y, num_y, periodic_y)
+        j_right = right_node(j_left, num_y, periodic_y)
+        fx = cell_fraction(rel_x, i_left)
+        fy = cell_fraction(rel_y, j_left)
         w_ll = (1.0 - fx) * (1.0 - fy)
         w_lr = fx * (1.0 - fy)
         w_ul = (1.0 - fx) * fy
@@ -152,15 +134,8 @@ def _x_rows(
         # the left x-node of _scatter_chunk_2d, compared without min/max
         rel_x = (positions[0, marker] - lower_x) * inverse_x
         if periodic_x == 1:
-            if not (rel_x >= 0.0 and rel_x < num_x):
-                rel_x = rel_x - num_x * (rel_x // num_x)
-            i_left = int(rel_x)
-            if i_left >= num_x:
-                i_left = num_x - 1
-        else:
-            i_left = int(rel_x) if rel_x >= 0.0 else 0
-            if i_left > num_x - 2:
-                i_left = num_x - 2
+            rel_x = periodic_position(rel_x, num_x)
+        i_left = left_node(rel_x, num_x, periodic_x)
         if i_left < lowest:
             lowest = i_left
         if i_left > highest:

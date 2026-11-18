@@ -5,6 +5,15 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `mpifield/kernels/linear_cell_pyccel.py`: the linear cell for Pyccel kernels, `@inline`
+  `periodic_position`, `left_node`, `right_node` and `cell_fraction` without local variables
+  (safe inside `#$ omp parallel for`), the Pyccel version of `linear_cell.cuh` and
+  `linear_cell.py`. Pyccel kernels of any package import them and cunumpy's kernel cache
+  builds them with the kernel (needs cunumpy with dependency builds, cunumpy#138). The linear
+  gathers and scatters use them: the same results bit for bit and the same speed.
+
 ### Changed
 
 - The kernels are built with cunumpy's `KernelPackage` (`mpifield.kernels.KERNEL_PACKAGE`):

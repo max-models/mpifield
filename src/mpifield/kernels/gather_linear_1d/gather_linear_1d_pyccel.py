@@ -5,6 +5,13 @@ this file is the CUDA version (GPU), with the same arguments.  Both are loaded
 by `mpifield.kernels.catalog`; this file is compiled with Pyccel there.
 """
 
+from mpifield.kernels.linear_cell_pyccel import (
+    cell_fraction,
+    left_node,
+    periodic_position,
+    right_node,
+)
+
 
 def gather_linear_1d(
     positions: "float[:,:]",
@@ -31,24 +38,10 @@ def gather_linear_1d(
     for marker in range(num_markers):
         rel_x = (positions[0, marker] - lower_x) * inverse_x
         if periodic_x == 1:
-            if not (rel_x >= 0.0 and rel_x < num_x):
-                rel_x = rel_x - num_x * (rel_x // num_x)
-            i_left = int(rel_x)
-            if i_left >= num_x:
-                i_left = num_x - 1
-            i_right = i_left + 1
-            if i_right == num_x:
-                i_right = 0
-        else:
-            i_left = int(rel_x) if rel_x >= 0.0 else 0
-            if i_left > num_x - 2:
-                i_left = num_x - 2
-            i_right = i_left + 1
-        fx = rel_x - i_left
-        if fx < 0.0:
-            fx = 0.0
-        if fx > 1.0:
-            fx = 1.0
+            rel_x = periodic_position(rel_x, num_x)
+        i_left = left_node(rel_x, num_x, periodic_x)
+        i_right = right_node(i_left, num_x, periodic_x)
+        fx = cell_fraction(rel_x, i_left)
         for component in range(num_components):
             result[component, marker] = (1.0 - fx) * field[
                 i_left, component

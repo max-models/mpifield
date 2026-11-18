@@ -13,6 +13,13 @@ the last bits, differs from the serial one). Few markers are deposited serially.
 import numpy as np
 from pyccel.stdlib.internal.openmp import omp_get_max_threads, omp_get_thread_num
 
+from mpifield.kernels.linear_cell_pyccel import (
+    cell_fraction,
+    left_node,
+    periodic_position,
+    right_node,
+)
+
 # Fewest markers worth the per-thread grid copies.
 MIN_PARALLEL_MARKERS = 20000
 
@@ -39,26 +46,10 @@ def _scatter_chunk_1d(
             continue
         relative_x = (positions[marker] - lower_x) / cell_size
         if periodic_x == 1:
-            if not (relative_x >= 0.0 and relative_x < num_gridpoints):
-                relative_x = relative_x - num_gridpoints * (
-                    relative_x // num_gridpoints
-                )
-            left = int(relative_x)
-            if left >= num_gridpoints:
-                left = num_gridpoints - 1
-            right = left + 1
-            if right == num_gridpoints:
-                right = 0
-        else:
-            left = int(relative_x) if relative_x >= 0.0 else 0
-            if left > num_gridpoints - 2:
-                left = num_gridpoints - 2
-            right = left + 1
-        fraction = relative_x - left
-        if fraction < 0.0:
-            fraction = 0.0
-        if fraction > 1.0:
-            fraction = 1.0
+            relative_x = periodic_position(relative_x, num_gridpoints)
+        left = left_node(relative_x, num_gridpoints, periodic_x)
+        right = right_node(left, num_gridpoints, periodic_x)
+        fraction = cell_fraction(relative_x, left)
         buffer[offset + left] += (1.0 - fraction) * values[marker]
         buffer[offset + right] += fraction * values[marker]
 

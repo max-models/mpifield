@@ -10,6 +10,13 @@ this file is the CUDA version (GPU), with the same arguments.  Both are loaded
 by `mpifield.kernels.catalog`; this file is compiled with Pyccel there.
 """
 
+from mpifield.kernels.linear_cell_pyccel import (
+    cell_fraction,
+    left_node,
+    periodic_position,
+    right_node,
+)
+
 
 def gather_linear_2d(
     positions: "float[:,:]",
@@ -41,44 +48,16 @@ def gather_linear_2d(
     for marker in range(num_markers):
         rel_x = (positions[0, marker] - lower_x) * inverse_x
         if periodic_x == 1:
-            if not (rel_x >= 0.0 and rel_x < num_x):
-                rel_x = rel_x - num_x * (rel_x // num_x)
-            i_left = int(rel_x)
-            if i_left >= num_x:
-                i_left = num_x - 1
-            i_right = i_left + 1
-            if i_right == num_x:
-                i_right = 0
-        else:
-            i_left = int(rel_x) if rel_x >= 0.0 else 0
-            if i_left > num_x - 2:
-                i_left = num_x - 2
-            i_right = i_left + 1
-        fx = rel_x - i_left
-        if fx < 0.0:
-            fx = 0.0
-        if fx > 1.0:
-            fx = 1.0
+            rel_x = periodic_position(rel_x, num_x)
+        i_left = left_node(rel_x, num_x, periodic_x)
+        i_right = right_node(i_left, num_x, periodic_x)
+        fx = cell_fraction(rel_x, i_left)
         rel_y = (positions[1, marker] - lower_y) * inverse_y
         if periodic_y == 1:
-            if not (rel_y >= 0.0 and rel_y < num_y):
-                rel_y = rel_y - num_y * (rel_y // num_y)
-            j_left = int(rel_y)
-            if j_left >= num_y:
-                j_left = num_y - 1
-            j_right = j_left + 1
-            if j_right == num_y:
-                j_right = 0
-        else:
-            j_left = int(rel_y) if rel_y >= 0.0 else 0
-            if j_left > num_y - 2:
-                j_left = num_y - 2
-            j_right = j_left + 1
-        fy = rel_y - j_left
-        if fy < 0.0:
-            fy = 0.0
-        if fy > 1.0:
-            fy = 1.0
+            rel_y = periodic_position(rel_y, num_y)
+        j_left = left_node(rel_y, num_y, periodic_y)
+        j_right = right_node(j_left, num_y, periodic_y)
+        fy = cell_fraction(rel_y, j_left)
         w_ll = (1.0 - fx) * (1.0 - fy)
         w_lr = fx * (1.0 - fy)
         w_ul = (1.0 - fx) * fy
