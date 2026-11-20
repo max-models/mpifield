@@ -4,7 +4,9 @@ The NumPy versions of the ``gather_edges_*`` and ``deposit_paths_*`` kernels cal
 with the same arithmetic as their Pyccel versions (``whitney_cell_pyccel.py``) and CUDA
 versions (``whitney_cell.cuh``). ``edges`` is ``num_nodes + (ndim,)``: ``edges[..., a]``
 the line integral along the edge from a node to its neighbour along axis ``a``;
-``geometry`` is ``(*lower, *cell_size, *num_nodes, *periodic)``.
+``geometry`` is ``(*lower, *cell_size, *num_nodes, *periodic)``. `edge_weight` and
+`edge_path_weight` are the NumPy versions of the shared weights, for other packages'
+NumPy kernels (picnic's implicit movers).
 """
 
 from __future__ import annotations
@@ -141,3 +143,31 @@ def deposit_paths(
                 sign = 1.0 if bits[0] == bits[1] else -1.0
                 weight = weight + sign * delta[others[0]] * delta[others[1]] / 12.0
             np.add.at(edges, (*index, axis), weight * q * delta[axis])
+
+
+def edge_weight(fraction: np.ndarray | float, upper: int) -> np.ndarray | float:
+    """The linear weight of the lower (``upper`` 0) or upper (1) edge at ``fraction``.
+
+    The NumPy version of ``whitney_cell_pyccel.edge_weight`` (and
+    ``mpifield_edge_weight`` of ``whitney_cell.cuh``), for arrays or numbers.
+    """
+    return fraction if upper == 1 else 1.0 - fraction
+
+
+def edge_path_weight(
+    fraction_u: np.ndarray | float,
+    fraction_w: np.ndarray | float,
+    delta_u: np.ndarray | float,
+    delta_w: np.ndarray | float,
+    upper_u: int,
+    upper_w: int,
+) -> np.ndarray | float:
+    """The average of a 3D edge's bilinear weight over a straight piece.
+
+    The NumPy version of ``whitney_cell_pyccel.edge_path_weight``: the weight at the
+    piece's midpoint ``fraction_u``, ``fraction_w`` plus ``+- delta_u delta_w / 12``.
+    """
+    cross = delta_u * delta_w / 12.0
+    return edge_weight(fraction_u, upper_u) * edge_weight(fraction_w, upper_w) + (
+        cross if upper_u == upper_w else -cross
+    )

@@ -216,3 +216,22 @@ def test_shape_and_argument_errors():
     with pytest.raises(ValueError, match="has none"):
         partial.deposit_paths_kernel(2)
     assert repr(WHITNEY) == "EdgeWeighting('whitney', ndim=(1, 2, 3), halo=1)"
+
+
+def test_the_numpy_edge_weights_are_the_pyccel_ones():
+    from mpifield.kernels import whitney_cell, whitney_cell_pyccel
+
+    rng = np.random.default_rng(30)
+    for _ in range(20):
+        f, g, du, dw = rng.uniform(-1.0, 1.0, 4)
+        for upper in (0, 1):
+            assert whitney_cell.edge_weight(
+                f, upper
+            ) == whitney_cell_pyccel.edge_weight(f, upper)
+            for other in (0, 1):
+                assert whitney_cell.edge_path_weight(
+                    f, g, du, dw, upper, other
+                ) == pytest.approx(
+                    whitney_cell_pyccel.edge_path_weight(f, g, du, dw, upper, other),
+                    rel=1e-15,
+                )
