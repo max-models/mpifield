@@ -411,3 +411,60 @@ def density_rules() -> dict[str, Rule]:
         return float((field.to_numpy() * volumes).sum())
 
     return {"total": Rule(q1 + q2, total, {"q_1": (-2.0, 2.0)}, rtol=1e-12)}
+
+
+def edge_rules() -> dict[str, Rule]:
+    """The rules of the edge field, with the compiled `WHITNEY` kernels.
+
+    - ``whitney``: in 2D the unit lower x-edge of cell ``(2, 3)`` (cell sizes 1) gives
+      ``E_x = 1 - f_y`` at ``(2.3, 3 + f_y)``, whatever the fraction along x;
+    - ``path``: in 3D a path inside cell ``(2, 2, 2)`` puts ``q dx`` times the average
+      of ``(1 - u)(1 - w)`` along it on the cell's lower x-edge.
+    """
+    import sympy
+
+    from mpifield.edges import WHITNEY
+
+    fy = sympy.symbols("f_y", real=True)
+    q, dx, u0, u1, w0, w1 = sympy.symbols("q d_x u_0 u_1 w_0 w_1", real=True)
+
+    def whitney(f_y: float) -> float:
+        edges = np.zeros((6, 7, 2))
+        edges[2, 3, 0] = 1.0
+        result = np.zeros((2, 1))
+        WHITNEY.gather_block(
+            np.array([[2.3], [3.0 + f_y]]), edges, result, _grid((6, 7), False)
+        )
+        return float(result[0, 0])
+
+    def path(
+        q: float, d_x: float, u_0: float, u_1: float, w_0: float, w_1: float
+    ) -> float:
+        edges = np.zeros((5, 5, 5, 3))
+        start = np.array([[2.0 + 0.5 - 0.5 * d_x], [2.0 + u_0], [2.0 + w_0]])
+        end = np.array([[2.0 + 0.5 + 0.5 * d_x], [2.0 + u_1], [2.0 + w_1]])
+        WHITNEY.deposit_paths_block(
+            start, end, np.array([q]), edges, _grid((5, 5, 5), False)
+        )
+        return float(edges[2, 2, 2, 0])
+
+    t = sympy.symbols("t", real=True)
+    average = sympy.integrate(
+        (1 - (u0 + t * (u1 - u0))) * (1 - (w0 + t * (w1 - w0))), (t, 0, 1)
+    )
+    inside = (0.01, 0.99)
+    return {
+        "whitney": Rule(1 - fy, whitney, {"f_y": inside}),
+        "path": Rule(
+            q * dx * average,
+            path,
+            {
+                "q": (-2.0, 2.0),
+                "d_x": (-0.9, 0.9),
+                "u_0": inside,
+                "u_1": inside,
+                "w_0": inside,
+                "w_1": inside,
+            },
+        ),
+    }

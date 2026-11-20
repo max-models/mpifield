@@ -7,6 +7,17 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Edge fields (`mpifield.edges`): `WHITNEY`, an `EdgeWeighting` pairing the lowest-order
+  edge (Whitney) gather (`gather_block`) with the deposit of the current of charges moving
+  along straight paths (`deposit_paths_block`) on a block, in 1D, 2D and 3D, with the block
+  incidence `gradient_block` and its transpose `divergence_block`. An edge field is
+  `num_nodes + (ndim,)` line integrals. `divergence_block` of the deposit is `LINEAR`'s charge
+  at the ends minus at the starts, to round-off, also across periodic seams and with paths
+  clamped at bounded edges. Kernels `gather_edges_{1,2,3}d` and `deposit_paths_{1,2,3}d` in
+  Pyccel (OpenMP), NumPy and CUDA (no Metal yet); `kernels/whitney_cell_pyccel.py` and
+  `kernels/whitney_cell.cuh` hold the edge weights for other packages' kernels (picnic's
+  implicit movers). Example 15 (Edge fields and currents).
+
 - `mpifield/kernels/linear_cell_pyccel.py`: the linear cell for Pyccel kernels, `@inline`
   `periodic_position`, `left_node`, `right_node` and `cell_fraction` without local variables
   (safe inside `#$ omp parallel for`), the Pyccel version of `linear_cell.cuh` and

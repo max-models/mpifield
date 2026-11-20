@@ -470,3 +470,81 @@ def test_gather_quadratic_matches_cpu_kernel(tmp_path, ndim, periodic):
         ["result"],
     )
     np.testing.assert_allclose(result, expected, rtol=1e-12, atol=1e-14)
+
+
+EDGE_CASES = [
+    (ndim, periodic)
+    for ndim in (1, 2, 3)
+    for periodic in [(0,) * ndim, (1,) * ndim, (1, 0, 1)[:ndim]]
+]
+
+
+def _edge_case(ndim, periodic, seed):
+    from mpifield import WHITNEY
+
+    rng = np.random.default_rng(seed)
+    shape = (5, 4, 3)[:ndim]
+    lower = rng.uniform(-1.0, 1.0, ndim)
+    spacing = rng.uniform(0.2, 0.6, ndim)
+    grid = BlockGrid.from_geometry(lower, spacing, shape, periodic)
+    upper = lower + spacing * (np.array(shape) - 1)
+    start = rng.uniform(lower - 0.3, upper + 0.3, (60, ndim)).T.copy()
+    end = start + rng.normal(0.0, 0.8, start.shape)
+    charges = rng.normal(size=60)
+    charges[::9] = 0.0
+    start[:, ::9] = np.nan  # dead paths: skipped without reading the position
+    geometry = ", ".join(
+        [repr(float(v)) for v in lower]
+        + [repr(float(v)) for v in spacing]
+        + [str(v) for v in shape]
+        + [str(int(p)) for p in periodic]
+    )
+    return WHITNEY, grid, shape, start, end, charges, geometry
+
+
+@pytest.mark.parametrize(("ndim", "periodic"), EDGE_CASES)
+def test_deposit_paths_matches_cpu_kernel(tmp_path, ndim, periodic):
+    whitney, grid, shape, start, end, charges, geometry = _edge_case(ndim, periodic, 21)
+    expected = np.zeros((*shape, ndim))
+    with xp.kernels.use_host_kernel_implementation("numpy"):
+        whitney.deposit_paths_block(start, end, charges, expected, grid)
+    name = f"deposit_paths_{ndim}d"
+    (result,) = _run(
+        tmp_path,
+        KERNELS[name].cuda_kernel,
+        {
+            "start": start,
+            "end": end,
+            "charges": charges,
+            "edges": np.zeros((*shape, ndim)),
+        },
+        {"start": 2, "end": 2, "charges": 1, "edges": ndim + 1},
+        (
+            charges.size,
+            f"{name}(start_view, end_view, charges_view, edges_view, {geometry})",
+        ),
+        ["edges"],
+    )
+    np.testing.assert_allclose(result, expected, rtol=1e-12, atol=1e-12)
+
+
+@pytest.mark.parametrize(("ndim", "periodic"), EDGE_CASES)
+def test_gather_edges_matches_cpu_kernel(tmp_path, ndim, periodic):
+    whitney, grid, shape, _, points, _, geometry = _edge_case(ndim, periodic, 22)
+    edges = np.random.default_rng(23).normal(size=(*shape, ndim))
+    expected = np.zeros(points.shape)
+    with xp.kernels.use_host_kernel_implementation("numpy"):
+        whitney.gather_block(points, edges, expected, grid)
+    name = f"gather_edges_{ndim}d"
+    (result,) = _run(
+        tmp_path,
+        KERNELS[name].cuda_kernel,
+        {"positions": points, "edges": edges, "result": np.zeros(points.shape)},
+        {"positions": 2, "edges": ndim + 1, "result": 2},
+        (
+            points.shape[1],
+            f"{name}(positions_view, edges_view, result_view, {geometry})",
+        ),
+        ["result"],
+    )
+    np.testing.assert_allclose(result, expected, rtol=1e-12, atol=1e-12)

@@ -46,6 +46,22 @@ force of its own.
 
 The deposit is a sum of weights, not a density: divide it by $\prod_d h_d$ for one.
 
+## Edge fields and currents
+
+An **[edge field](/mpifield/numerics/edges/)** holds the line integral $e$ of a vector field
+along every edge of the grid, `num_nodes + (ndim,)`. Inside a cell `WHITNEY` interpolates it with
+the lowest-order edge (Whitney, Nédélec first kind) functions: the component along an axis is
+multilinear across the cell between the cell's edges along that axis, divided by $h_a$. Its
+pair is the deposit of the current of markers moving along straight paths: each path is cut
+where it crosses a grid line or plane, and each piece integrates the edge functions exactly. With
+the discrete gradient $G$ (a potential's difference along every edge), the field of $G\phi$ is
+the gradient of `LINEAR`'s interpolant of $\phi$, and $G^\top j$ is the change of `LINEAR`'s
+charge from the starts to the ends of the paths: the deposit conserves charge exactly, and
+$j^\top e$ is the work of the field on the markers. These are the block kernels of an
+energy- and charge-conserving implicit PIC; patchwork composes them across refinement patches.
+
+<MethodCard name="mpifield.edges.EdgeWeighting" headingLevel={3} />
+
 ## Over MPI ranks
 
 Each rank stores its block of the grid with halo nodes, at least as many as the weighting needs
@@ -89,7 +105,8 @@ arithmetic.
 
 - No Poisson or Maxwell solver, no particle pusher, no time integration.
 - No normalisation of the deposit by the cell volume or by a species weight.
-- Only the gradient of a scalar field: no divergence or curl.
+- Only the gradient of a scalar field on the nodes, and the incidence $G$ and $G^\top$ of the
+  edges: no curl.
 - Only linear and quadratic weightings are built in, and no energy-conserving (non-adjoint)
   schemes; a weighting of your own is a pair of kernels.
 - Markers are not moved between ranks: each rank deposits and gathers its own, and wraps them on
@@ -101,5 +118,6 @@ arithmetic.
 
 Besides the checks of the cards, the tests compare the Pyccel, CUDA (emulated) and Metal
 kernels with the NumPy ones, the deposit with the transpose of the gather, the OpenMP deposit
-with the serial one, and, under `mpiexec`, the split deposit, gather, gradient and smoothing
+with the serial one, the divergence of the path deposit with the change of the linear charge
+and its product with an edge field with the work along the paths, and, under `mpiexec`, the split deposit, gather, gradient and smoothing
 with those of one rank.

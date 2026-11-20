@@ -22,7 +22,12 @@ import numpy as np
 import pytest
 
 from mpifield import LINEAR, QUADRATIC, Field
-from mpifield.kernels.catalog import KERNEL_NAMES, KERNELS, metal_kernel
+from mpifield.kernels.catalog import (
+    KERNEL_NAMES,
+    KERNELS,
+    METAL_KERNEL_NAMES,
+    metal_kernel,
+)
 
 
 def _folder(name):
@@ -44,7 +49,7 @@ def test_each_kernel_has_a_folder_with_all_versions(name):
     assert list(functions) == [name]
     assert re.search(rf"__global__\s+void\s+{name}\s*\(", cuda.read_text())
     assert (folder / f"{name}_numpy.py").is_file()
-    assert (folder / f"{name}_metal.py").is_file()
+    assert (folder / f"{name}_metal.py").is_file() == (name in METAL_KERNEL_NAMES)
 
 
 @pytest.mark.parametrize("name", KERNEL_NAMES)
