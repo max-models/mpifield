@@ -23,7 +23,9 @@ sources include mpifield's header relative to the source root:
 ``#include "mpifield/kernels/linear_cell.cuh"``.
 
 The kernels are the linear (``*_linear_*``) and quadratic (``*_quadratic_*``) deposits
-and gathers of `mpifield.weighting`. The quadratic ones, and the 1D and 2D linear
+and gathers of `mpifield.weighting`, and the edge gathers (``gather_edges_*``) and path
+deposits (``deposit_paths_*``) of `mpifield.edges` (edge fields ``num_nodes + (ndim,)``,
+paths ``(ndim, N)``, charges ``(N,)``; no Metal version yet). The quadratic ones, and the 1D and 2D linear
 gathers and the 2D linear deposit, take the arguments of the weighting kernel
 convention; the linear 1D deposit takes one component (``(N,)`` markers, an ``(nx,)``
 grid) and the linear 3D kernels the grid as rows ``(nx * ny * nz, ncomp)``.
@@ -57,6 +59,12 @@ KERNEL_NAMES = (
     "scatter_quadratic_1d",
     "scatter_quadratic_2d",
     "scatter_quadratic_3d",
+    "gather_edges_1d",
+    "gather_edges_2d",
+    "gather_edges_3d",
+    "deposit_paths_1d",
+    "deposit_paths_2d",
+    "deposit_paths_3d",
 )
 
 _PACKAGE = __name__.rpartition(".")[0]
@@ -69,8 +77,13 @@ KERNELS = xp.kernels.KernelCatalog(
     }
 )
 
-#: The kernels with a Metal version (``<name>/<name>_metal.py``): all of them.
-METAL_KERNEL_NAMES = KERNEL_NAMES
+#: The kernels with a Metal version (``<name>/<name>_metal.py``): the node weightings',
+#: not yet the edge ones (``gather_edges_*``, ``deposit_paths_*``).
+METAL_KERNEL_NAMES = tuple(
+    name
+    for name in KERNEL_NAMES
+    if not name.startswith(("gather_edges", "deposit_paths"))
+)
 
 
 def metal_kernel(name: str) -> Callable[..., None]:

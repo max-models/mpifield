@@ -6,6 +6,9 @@
 (`Field.scatter`) with a `Weighting`: `LINEAR` (the default),
 `QUADRATIC` or one of your own. The built-in ones run compiled kernels of
 `mpifield.kernels`, on the CPU (Pyccel, NumPy) or the GPU (CUDA, Metal).
+`WHITNEY` gathers the field of an edge field (line integrals along the edges) and
+deposits the current of charges moving along paths onto the edges, conserving
+`LINEAR`'s charge exactly.
 """
 
 from importlib.metadata import PackageNotFoundError, version
@@ -14,6 +17,7 @@ import scope_profiler as sp
 
 from mpifield._profiling import PROFILE_TAGS
 from mpifield._types import BlockGrid, Bounds
+from mpifield.edges import WHITNEY, EdgeWeighting
 from mpifield.field import Field
 from mpifield.prescribed import axial_potential, electric_field_from_potential
 from mpifield.weighting import LINEAR, QUADRATIC, Weighting
@@ -29,8 +33,10 @@ sp.register_opt_in_tag(*PROFILE_TAGS)
 __all__ = [
     "LINEAR",
     "QUADRATIC",
+    "WHITNEY",
     "BlockGrid",
     "Bounds",
+    "EdgeWeighting",
     "Field",
     "Weighting",
     "__version__",
