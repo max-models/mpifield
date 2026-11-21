@@ -14,7 +14,7 @@ deposit at the ends minus at the starts. A zero or non-finite path deposits noth
 
 With OpenMP the paths are split over the threads in contiguous chunks, each
 depositing into its own copy of the edges, summed in thread order. Few paths are
-deposited serially.
+deposited on one thread.
 """
 
 from math import ceil, floor
@@ -33,7 +33,8 @@ def _deposit_chunk_1d(
     start: "float[:,:]",
     end: "float[:,:]",
     charges: "float[:]",
-    edges: "float[:,:]",
+    buffer: "float[:,:,:]",
+    slot: int,
     first: int,
     last: int,
     lower_x: float,
@@ -41,7 +42,7 @@ def _deposit_chunk_1d(
     num_x: int,
     periodic_x: int,
 ) -> None:
-    """Deposit the paths ``first`` to ``last`` into ``edges``."""
+    """Deposit the paths ``first`` to ``last`` into ``buffer[slot]``."""
     inverse_x = 1.0 / cell_size_x
     for path in range(first, last):
         q = charges[path]
@@ -71,7 +72,7 @@ def _deposit_chunk_1d(
             if periodic_x == 1:
                 mid_x = periodic_position(mid_x, num_x)
             i_left = left_node(mid_x, num_x, periodic_x)
-            edges[i_left, 0] += q * (x1 - x0)
+            buffer[slot, i_left, 0] += q * (x1 - x0)
             time = following
             x0 = x1
 
@@ -89,12 +90,10 @@ def deposit_paths_1d(
     """Add the current of the paths from ``start`` to ``end`` (1, N) to ``edges`` (nx, 1)."""
     num_paths = charges.shape[0]
     num_threads = int(omp_get_max_threads())
-    if num_threads == 1 or num_paths < MIN_PARALLEL_PATHS or num_paths < edges.shape[0]:
-        _deposit_chunk_1d(
-            start, end, charges, edges, 0, num_paths,
-            lower_x, cell_size_x, num_x, periodic_x,
-        )  # fmt: skip
-        return
+    if num_paths < MIN_PARALLEL_PATHS or num_paths < edges.shape[0]:
+        num_threads = 1
+    # one copy of the edges per thread, the thread's slot passed with the whole
+    # buffer: a slice ``buffer[thread]`` would be one view shared by the threads
     buffer = np.zeros((num_threads, edges.shape[0], 1))
     chunk = (num_paths + num_threads - 1) // num_threads
     # fmt: off
@@ -104,13 +103,15 @@ def deposit_paths_1d(
     first = min(thread * chunk, num_paths)
     last = min(first + chunk, num_paths)
     _deposit_chunk_1d(
-        start, end, charges, buffer[thread], first, last,
-        lower_x, cell_size_x, num_x, periodic_x,
+        start, end, charges, buffer, thread, first, last,
+        lower_x, cell_size_x,
+        num_x, periodic_x,
     )  # fmt: skip
     # fmt: off
     #$ omp end parallel
-    #$ omp parallel for private(thread)
+    #$ omp parallel for private(a, thread)
     # fmt: on
     for i in range(edges.shape[0]):
-        for thread in range(num_threads):
-            edges[i, 0] += buffer[thread, i, 0]
+        for a in range(1):
+            for thread in range(num_threads):
+                edges[i, a] += buffer[thread, i, a]

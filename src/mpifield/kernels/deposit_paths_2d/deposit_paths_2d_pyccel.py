@@ -17,7 +17,7 @@ non-finite path deposits nothing.
 
 With OpenMP the paths are split over the threads in contiguous chunks, each
 depositing into its own copy of the edges, summed in thread order. Few paths are
-deposited serially.
+deposited on one thread.
 """
 
 from math import ceil, floor
@@ -45,7 +45,8 @@ def _deposit_chunk_2d(
     start: "float[:,:]",
     end: "float[:,:]",
     charges: "float[:]",
-    edges: "float[:,:,:]",
+    buffer: "float[:,:,:,:]",
+    slot: int,
     first: int,
     last: int,
     lower_x: float,
@@ -57,7 +58,7 @@ def _deposit_chunk_2d(
     periodic_x: int,
     periodic_y: int,
 ) -> None:
-    """Deposit the paths ``first`` to ``last`` into ``edges``."""
+    """Deposit the paths ``first`` to ``last`` into ``buffer[slot]``."""
     inverse_x = 1.0 / cell_size_x
     inverse_y = 1.0 / cell_size_y
     for path in range(first, last):
@@ -128,10 +129,10 @@ def _deposit_chunk_2d(
             fy = cell_fraction(mid_y, j_left)
             along_x = q * (x1 - x0)
             along_y = q * (y1 - y0)
-            edges[i_left, j_left, 0] += edge_weight(fy, 0) * along_x
-            edges[i_left, j_right, 0] += edge_weight(fy, 1) * along_x
-            edges[i_left, j_left, 1] += edge_weight(fx, 0) * along_y
-            edges[i_right, j_left, 1] += edge_weight(fx, 1) * along_y
+            buffer[slot, i_left, j_left, 0] += edge_weight(fy, 0) * along_x
+            buffer[slot, i_left, j_right, 0] += edge_weight(fy, 1) * along_x
+            buffer[slot, i_left, j_left, 1] += edge_weight(fx, 0) * along_y
+            buffer[slot, i_right, j_left, 1] += edge_weight(fx, 1) * along_y
             time = following
             x0 = x1
             y0 = y1
@@ -154,17 +155,10 @@ def deposit_paths_2d(
     """Add the current of the paths from ``start`` to ``end`` (2, N) to ``edges`` (nx, ny, 2)."""
     num_paths = charges.shape[0]
     num_threads = int(omp_get_max_threads())
-    if (
-        num_threads == 1
-        or num_paths < MIN_PARALLEL_PATHS
-        or num_paths < edges.shape[0] * edges.shape[1]
-    ):
-        _deposit_chunk_2d(
-            start, end, charges, edges, 0, num_paths,
-            lower_x, lower_y, cell_size_x, cell_size_y,
-            num_x, num_y, periodic_x, periodic_y,
-        )  # fmt: skip
-        return
+    if num_paths < MIN_PARALLEL_PATHS or num_paths < edges.shape[0] * edges.shape[1]:
+        num_threads = 1
+    # one copy of the edges per thread, the thread's slot passed with the whole
+    # buffer: a slice ``buffer[thread]`` would be one view shared by the threads
     buffer = np.zeros((num_threads, edges.shape[0], edges.shape[1], 2))
     chunk = (num_paths + num_threads - 1) // num_threads
     # fmt: off
@@ -174,7 +168,7 @@ def deposit_paths_2d(
     first = min(thread * chunk, num_paths)
     last = min(first + chunk, num_paths)
     _deposit_chunk_2d(
-        start, end, charges, buffer[thread], first, last,
+        start, end, charges, buffer, thread, first, last,
         lower_x, lower_y, cell_size_x, cell_size_y,
         num_x, num_y, periodic_x, periodic_y,
     )  # fmt: skip

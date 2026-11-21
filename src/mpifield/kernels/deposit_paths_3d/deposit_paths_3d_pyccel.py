@@ -17,7 +17,7 @@ non-finite path deposits nothing.
 
 With OpenMP the paths are split over the threads in contiguous chunks, each
 depositing into its own copy of the edges, summed in thread order. Few paths are
-deposited serially.
+deposited on one thread.
 """
 
 from math import ceil, floor
@@ -45,7 +45,8 @@ def _deposit_chunk_3d(
     start: "float[:,:]",
     end: "float[:,:]",
     charges: "float[:]",
-    edges: "float[:,:,:,:]",
+    buffer: "float[:,:,:,:,:]",
+    slot: int,
     first: int,
     last: int,
     lower_x: float,
@@ -61,7 +62,7 @@ def _deposit_chunk_3d(
     periodic_y: int,
     periodic_z: int,
 ) -> None:
-    """Deposit the paths ``first`` to ``last`` into ``edges``."""
+    """Deposit the paths ``first`` to ``last`` into ``buffer[slot]``."""
     inverse_x = 1.0 / cell_size_x
     inverse_y = 1.0 / cell_size_y
     inverse_z = 1.0 / cell_size_z
@@ -165,40 +166,40 @@ def _deposit_chunk_3d(
             along_z = q * delta_z
             # the x-edges across y and z, the y-edges across x and z, the z-edges
             # across x and y
-            edges[i0, j0, k0, 0] += along_x * edge_path_weight(
+            buffer[slot, i0, j0, k0, 0] += along_x * edge_path_weight(
                 fy, fz, delta_y, delta_z, 0, 0
             )
-            edges[i0, j1, k0, 0] += along_x * edge_path_weight(
+            buffer[slot, i0, j1, k0, 0] += along_x * edge_path_weight(
                 fy, fz, delta_y, delta_z, 1, 0
             )
-            edges[i0, j0, k1, 0] += along_x * edge_path_weight(
+            buffer[slot, i0, j0, k1, 0] += along_x * edge_path_weight(
                 fy, fz, delta_y, delta_z, 0, 1
             )
-            edges[i0, j1, k1, 0] += along_x * edge_path_weight(
+            buffer[slot, i0, j1, k1, 0] += along_x * edge_path_weight(
                 fy, fz, delta_y, delta_z, 1, 1
             )
-            edges[i0, j0, k0, 1] += along_y * edge_path_weight(
+            buffer[slot, i0, j0, k0, 1] += along_y * edge_path_weight(
                 fx, fz, delta_x, delta_z, 0, 0
             )
-            edges[i1, j0, k0, 1] += along_y * edge_path_weight(
+            buffer[slot, i1, j0, k0, 1] += along_y * edge_path_weight(
                 fx, fz, delta_x, delta_z, 1, 0
             )
-            edges[i0, j0, k1, 1] += along_y * edge_path_weight(
+            buffer[slot, i0, j0, k1, 1] += along_y * edge_path_weight(
                 fx, fz, delta_x, delta_z, 0, 1
             )
-            edges[i1, j0, k1, 1] += along_y * edge_path_weight(
+            buffer[slot, i1, j0, k1, 1] += along_y * edge_path_weight(
                 fx, fz, delta_x, delta_z, 1, 1
             )
-            edges[i0, j0, k0, 2] += along_z * edge_path_weight(
+            buffer[slot, i0, j0, k0, 2] += along_z * edge_path_weight(
                 fx, fy, delta_x, delta_y, 0, 0
             )
-            edges[i1, j0, k0, 2] += along_z * edge_path_weight(
+            buffer[slot, i1, j0, k0, 2] += along_z * edge_path_weight(
                 fx, fy, delta_x, delta_y, 1, 0
             )
-            edges[i0, j1, k0, 2] += along_z * edge_path_weight(
+            buffer[slot, i0, j1, k0, 2] += along_z * edge_path_weight(
                 fx, fy, delta_x, delta_y, 0, 1
             )
-            edges[i1, j1, k0, 2] += along_z * edge_path_weight(
+            buffer[slot, i1, j1, k0, 2] += along_z * edge_path_weight(
                 fx, fy, delta_x, delta_y, 1, 1
             )
             time = following
@@ -229,16 +230,12 @@ def deposit_paths_3d(
     num_paths = charges.shape[0]
     num_threads = int(omp_get_max_threads())
     if (
-        num_threads == 1
-        or num_paths < MIN_PARALLEL_PATHS
+        num_paths < MIN_PARALLEL_PATHS
         or num_paths < edges.shape[0] * edges.shape[1] * edges.shape[2]
     ):
-        _deposit_chunk_3d(
-            start, end, charges, edges, 0, num_paths,
-            lower_x, lower_y, lower_z, cell_size_x, cell_size_y, cell_size_z,
-            num_x, num_y, num_z, periodic_x, periodic_y, periodic_z,
-        )  # fmt: skip
-        return
+        num_threads = 1
+    # one copy of the edges per thread, the thread's slot passed with the whole
+    # buffer: a slice ``buffer[thread]`` would be one view shared by the threads
     buffer = np.zeros((num_threads, edges.shape[0], edges.shape[1], edges.shape[2], 3))
     chunk = (num_paths + num_threads - 1) // num_threads
     # fmt: off
@@ -248,7 +245,7 @@ def deposit_paths_3d(
     first = min(thread * chunk, num_paths)
     last = min(first + chunk, num_paths)
     _deposit_chunk_3d(
-        start, end, charges, buffer[thread], first, last,
+        start, end, charges, buffer, thread, first, last,
         lower_x, lower_y, lower_z, cell_size_x, cell_size_y, cell_size_z,
         num_x, num_y, num_z, periodic_x, periodic_y, periodic_z,
     )  # fmt: skip

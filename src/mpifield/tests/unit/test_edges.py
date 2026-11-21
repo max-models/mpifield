@@ -112,10 +112,12 @@ def test_many_paths_over_threads_match_one_thread(ndim, monkeypatch):
     """Enough paths for the per-thread copies of the compiled kernels."""
     grid = _grid(ndim, (True,) * ndim)
     start, end, charges = _paths(grid, 25000, seed=8)
-    current = _deposit(grid, start, end, charges)
     with xp.kernels.use_host_kernel_implementation("numpy"):
         reference = _deposit(grid, start, end, charges)
-    np.testing.assert_allclose(current, reference, atol=1e-10)
+    # repeated: the threads must not share their copies of the edges
+    for _ in range(5):
+        current = _deposit(grid, start, end, charges)
+        np.testing.assert_allclose(current, reference, atol=1e-10)
 
 
 @pytest.mark.parametrize(("ndim", "periodic"), CASES)
