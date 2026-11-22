@@ -664,3 +664,68 @@ def test_spline_edge_kernels_match_cpu_kernels(tmp_path, ndim, periodic, degree)
         ["result"],
     )
     np.testing.assert_allclose(result, expected, rtol=1e-12, atol=1e-12)
+
+
+@pytest.mark.parametrize("degree", [1, 3])
+@pytest.mark.parametrize(("ndim", "periodic"), QUADRATIC_CASES[::2])
+def test_spline_form_kernels_match_cpu_kernels(tmp_path, ndim, periodic, degree):
+    from mpifield.kernels.spline_forms import num_components
+
+    case = _quadratic_case(ndim, 30 + degree)
+    rng = np.random.default_rng(degree)
+    grid = BlockGrid.from_geometry(
+        case["lower"], case["spacing"], case["shape"], periodic
+    )
+    flags = ", ".join(str(int(p)) for p in periodic)
+    for form in range(1, ndim + 1):
+        components = num_components(form, ndim)
+        values = rng.normal(size=(components, case["n"]))
+        values[:, ::7] = 0.0
+        field_shape = (*case["shape"], components)
+        scatter = f"scatter_forms_spline_{ndim}d"
+        expected = np.zeros(field_shape)
+        with xp.kernels.use_host_kernel_implementation("numpy"):
+            KERNELS[scatter](
+                case["points"], values, expected, *grid.geometry, degree, form
+            )
+        (result,) = _run(
+            tmp_path,
+            KERNELS[scatter].cuda_kernel,
+            {
+                "positions": case["points"],
+                "values": values,
+                "field": np.zeros(field_shape),
+            },
+            {"positions": 2, "values": 2, "field": ndim + 1},
+            (
+                case["n"],
+                f"{scatter}(positions_view, values_view, field_view, "
+                f"{case['geometry']}, {flags}, {degree}, {form})",
+            ),
+            ["field"],
+        )
+        np.testing.assert_allclose(result, expected, rtol=1e-12, atol=1e-12)
+        gather = f"gather_forms_spline_{ndim}d"
+        field = rng.normal(size=field_shape)
+        expected = np.zeros_like(values)
+        with xp.kernels.use_host_kernel_implementation("numpy"):
+            KERNELS[gather](
+                case["points"], field, expected, *grid.geometry, degree, form
+            )
+        (result,) = _run(
+            tmp_path,
+            KERNELS[gather].cuda_kernel,
+            {
+                "positions": case["points"],
+                "field": field,
+                "result": np.zeros_like(values),
+            },
+            {"positions": 2, "field": ndim + 1, "result": 2},
+            (
+                case["n"],
+                f"{gather}(positions_view, field_view, result_view, "
+                f"{case['geometry']}, {flags}, {degree}, {form})",
+            ),
+            ["result"],
+        )
+        np.testing.assert_allclose(result, expected, rtol=1e-12, atol=1e-12)

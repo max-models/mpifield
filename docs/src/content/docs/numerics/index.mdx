@@ -59,6 +59,10 @@ and degree 3 (`CUBIC`, `CUBIC_EDGES`): the function of an edge along axis $a$ is
 $B_{p-1}(r_a - k_a - \tfrac12)\prod_{b\ne a} B_p(r_b - k_b)$, the derivative identity
 $B_p'(x) = B_{p-1}(x + \tfrac12) - B_{p-1}(x - \tfrac12)$ makes the path deposit conserve the
 node charge of degree $p$, and each path piece between knot planes is integrated exactly.
+`faces` (3D) and `cells` complete the sequence: degree $p$ along a face's normal and $p - 1$
+across, $p - 1$ along every axis for a cell. At bounded walls the $B_p$ factors fold and the
+staggered $B_{p-1}$ factors drop what lies past the wall, so the gathered fields commute with
+the discrete curl and divergence.
 
 <MethodCard name="mpifield.splines.Splines" headingLevel={4} />
 
@@ -124,7 +128,8 @@ arithmetic.
 - Only the gradient of a scalar field on the nodes, and the incidence $G$ and $G^\top$ of the
   edges: no curl.
 - Only B-spline weightings up to degree 3 are built in (no Metal kernels for the cubic one or
-  the spline edges; the spline path deposit is serial on the CPU), no faces or cells, and no energy-conserving (non-adjoint) schemes; a weighting of your
+  the spline edges, faces and cells; the spline path deposit is serial on the CPU), only the
+  folded boundary rule (no clamped knots), and no energy-conserving (non-adjoint) schemes; a weighting of your
   own is a pair of kernels.
 - Markers are not moved between ranks: each rank deposits and gathers its own, and wraps them on
   a split periodic axis.

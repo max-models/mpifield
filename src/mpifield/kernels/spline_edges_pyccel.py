@@ -158,3 +158,18 @@ def path_cuts(
             j -= 1
         cuts[j + 1] = value
     return count
+
+
+def staggered(form: int, ndim: int, component: int, axis: int) -> int:
+    """1 where component ``component`` of a ``form``-form is staggered along ``axis``.
+
+    Edges along their direction, faces (2-forms in 3D) across their normal, the top
+    form along every axis.
+    """
+    if form == ndim:
+        return 1
+    if form == 1:
+        return 1 if axis == component else 0
+    if form == 2 and ndim == 3:
+        return 0 if axis == component else 1
+    return 0

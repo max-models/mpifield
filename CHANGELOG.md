@@ -12,6 +12,15 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `splines(p)` returning the built-in one (`SPLINES`: degree 1 `(LINEAR, WHITNEY)`, 2
   `(QUADRATIC, QUADRATIC_EDGES)`, 3 `(CUBIC, CUBIC_EDGES)`). `Weighting.degree` and `EdgeWeighting.degree` give
   the degree of a built-in weighting (`None` for one of your own).
+- Faces and cells of the spline sequence: `Splines.faces` (2-forms in 3D, degree p along the
+  normal and p - 1 across) and `Splines.cells` (the top form, p - 1 along every axis), each a
+  `Weighting` on values that are integrals over the faces or cells. At bounded walls the
+  `B_p` factors fold and the staggered `B_{p-1}` ones drop the k-cells past the wall, so the
+  gathered fields commute with the discrete derivatives: the faces of `C e` gather the curl
+  of the edge field, the cells of `D f` the divergence of the face field. Kernels
+  `gather_forms_spline_{1,2,3}d` and `scatter_forms_spline_{1,2,3}d` with the degree and the
+  form as their last arguments, in Pyccel (OpenMP), NumPy (`kernels/spline_forms.py`) and
+  CUDA.
 - `QUADRATIC_EDGES` and `CUBIC_EDGES`: the edge weightings of degree 2 and 3, paired with
   `QUADRATIC` and `CUBIC` in `splines(p)`. The function of an edge along axis a is
   `B_{p-1}(r_a - k_a - 1/2) prod_{b != a} B_p(r_b - k_b)`, so the path deposit conserves the

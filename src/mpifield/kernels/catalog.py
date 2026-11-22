@@ -79,6 +79,12 @@ KERNEL_NAMES = (
     "deposit_paths_spline_1d",
     "deposit_paths_spline_2d",
     "deposit_paths_spline_3d",
+    "gather_forms_spline_1d",
+    "gather_forms_spline_2d",
+    "gather_forms_spline_3d",
+    "scatter_forms_spline_1d",
+    "scatter_forms_spline_2d",
+    "scatter_forms_spline_3d",
 )
 
 _PACKAGE = __name__.rpartition(".")[0]
@@ -98,7 +104,14 @@ METAL_KERNEL_NAMES = tuple(
     name
     for name in KERNEL_NAMES
     if not name.startswith(
-        ("gather_edges", "deposit_paths", "gather_spline", "scatter_spline")
+        (
+            "gather_edges",
+            "deposit_paths",
+            "gather_spline",
+            "scatter_spline",
+            "gather_forms",
+            "scatter_forms",
+        )
     )
 )
 

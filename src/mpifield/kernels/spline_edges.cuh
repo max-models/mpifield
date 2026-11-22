@@ -118,4 +118,12 @@ __device__ __forceinline__ int mpifield_path_cuts(
     return count;
 }
 
+// 1 where component `component` of a `form`-form is staggered along `axis`.
+__device__ __forceinline__ int mpifield_staggered(int form, int ndim, int component, int axis) {
+    if (form == ndim) return 1;
+    if (form == 1) return axis == component ? 1 : 0;
+    if (form == 2 && ndim == 3) return axis == component ? 0 : 1;
+    return 0;
+}
+
 #endif  // MPIFIELD_KERNELS_SPLINE_EDGES_CUH
