@@ -9,6 +9,8 @@
 #ifndef MPIFIELD_KERNELS_SPLINE_EDGES_CUH
 #define MPIFIELD_KERNELS_SPLINE_EDGES_CUH
 
+#include "mpifield/kernels/spline_cell.cuh"
+
 #define MPIFIELD_SPLINE_MAX_CUTS 32
 
 __device__ __forceinline__ int mpifield_floor_int(double x) {
@@ -20,13 +22,18 @@ __device__ __forceinline__ int mpifield_floor_int(double x) {
 __device__ __forceinline__ void mpifield_along_stencil(
     double rel, int num, int periodic, int degree, int* edge, double* weight, int* exists
 ) {
+    if (periodic == 2) {  // a clamped axis: the rescaled clamped B-splines
+        mpifield_clamped_cell(rel, num, degree, 1, edge, weight);
+        for (int a = 0; a < degree; ++a) exists[a] = 1;
+        return;
+    }
     const int lower = degree - 1;
-    if (periodic && !(rel >= 0.0 && rel < num)) rel = rel - num * floor(rel / num);
+    if (periodic == 1 && !(rel >= 0.0 && rel < num)) rel = rel - num * floor(rel / num);
     const double shifted = rel - 0.5;
     int middle;
     if (lower % 2 == 0) {
         middle = mpifield_floor_int(shifted + 0.5);
-        if (!periodic && middle > num - 2) middle = num - 2;
+        if (periodic == 0 && middle > num - 2) middle = num - 2;
     } else {
         middle = mpifield_floor_int(shifted);
     }
@@ -44,7 +51,7 @@ __device__ __forceinline__ void mpifield_along_stencil(
     const int first = middle - lower / 2;
     for (int a = 0; a < degree; ++a) {
         const int k = first + a;
-        if (periodic) {
+        if (periodic == 1) {
             edge[a] = (k + 2 * num) % num;
             exists[a] = 1;
         } else if (k < 0 || k > num - 2) {
@@ -92,13 +99,14 @@ __device__ __forceinline__ int mpifield_path_cuts(
         if (delta == 0.0) continue;
         const double low = delta > 0.0 ? r0[d] : r1[d];
         const double high = delta > 0.0 ? r1[d] : r0[d];
-        double plane = mpifield_floor_int(low - shift) + 1.0 + shift;
+        const double offset = periodic[d] == 2 ? 0.0 : shift;  // clamped knots: the nodes
+        double plane = mpifield_floor_int(low - offset) + 1.0 + offset;
         while (plane < high) {
             const double t = (plane - r0[d]) / delta;
             if (t > 0.0 && t < 1.0) cuts[count++] = t;
             plane += 1.0;
         }
-        if (!periodic[d]) {
+        if (periodic[d] != 1) {
             double t = (0.0 - r0[d]) / delta;
             if (t > 0.0 && t < 1.0) cuts[count++] = t;
             t = (num[d] - 1.0 - r0[d]) / delta;

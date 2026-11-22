@@ -86,6 +86,15 @@ def _frozen(kernels: Mapping[int, KernelFunction], role: str) -> Mapping[int, An
     return MappingProxyType(dict(kernels))
 
 
+def _check_clamps(weighting: Any, grid: BlockGrid) -> None:
+    """Raise if ``grid`` has a clamped axis that ``weighting``'s kernels do not take."""
+    if any(grid.clamped) and not weighting.clamps:
+        raise ValueError(
+            f"the {weighting.name} weighting does not take clamped axes; use "
+            "mpifield.splines(degree, clamped=True)"
+        )
+
+
 @method(
     equations={
         r"adjoint": r"\sum_i q_i\, g(\mathbf x_i) = \sum_i q_i \sum_{\mathbf k} W_{\mathbf k}(\mathbf x_i)\, G_{\mathbf k} = \sum_{\mathbf k} G_{\mathbf k}\, \rho_{\mathbf k}",
@@ -115,7 +124,9 @@ class Weighting:
     gathers from the stored block: for a stencil of ``s`` nodes per axis,
     ``(s + 1) // 2``. ``degree`` is the B-spline degree of the shape, for a
     weighting that is one (``None`` otherwise): the codes check it where a
-    degree matters, such as the edge weighting that must go with it.
+    degree matters, such as the edge weighting that must go with it. ``clamps``
+    says that its kernels take clamped axes (boundary code 2, `BlockGrid`
+    ``clamped``): the spline kernels do, the linear and quadratic ones do not.
 
     Examples:
     --------
@@ -129,6 +140,7 @@ class Weighting:
     gather: Mapping[int, KernelFunction]
     halo: int = 1
     degree: int | None = None
+    clamps: bool = False
 
     def __post_init__(self) -> None:
         """Check the dimensions, the halo and the degree; freeze the kernel mappings."""
@@ -188,6 +200,7 @@ class Weighting:
         float64 or (for ``field``) not C-contiguous. A 1-D ``values`` is one
         component.
         """
+        _check_clamps(self, grid)
         kernel = self.scatter_kernel(len(grid.periodic))
         convert = partial(
             xp.kernels.as_kernel_array, like=field, dtype=float, strided=True
@@ -223,6 +236,7 @@ class Weighting:
         ``result`` is ``(ncomp, N)`` and may be on either side of ``field``; the
         kernel runs on the side of ``field``.
         """
+        _check_clamps(self, grid)
         kernel = self.gather_kernel(len(grid.periodic))
         positions = xp.kernels.as_kernel_array(
             positions, like=field, dtype=float, strided=True
@@ -359,4 +373,5 @@ CUBIC = Weighting(
     },
     halo=2,
     degree=3,
+    clamps=True,
 )

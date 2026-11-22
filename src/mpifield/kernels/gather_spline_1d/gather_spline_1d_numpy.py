@@ -23,7 +23,7 @@ def gather_spline_1d(
 ) -> None:
     """Interpolate ``field`` (nx, components) at the markers into ``result`` (components, N)."""
     nodes_x, weights_x = spline_cell(
-        (positions[0] - lower_x) / cell_size_x, num_x, bool(periodic_x), degree
+        (positions[0] - lower_x) / cell_size_x, num_x, int(periodic_x), degree
     )
     total = np.zeros_like(result)
     for i, wx in zip(nodes_x, weights_x, strict=True):

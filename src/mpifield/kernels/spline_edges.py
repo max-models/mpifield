@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from mpifield.kernels.spline_cell import _weights, spline_cell
+from mpifield.kernels.spline_cell import _weights, clamped_cell, spline_cell
 
 #: The degrees the spline edge functions cover (the degree of the node weighting).
 EDGE_DEGREES = (1, 2, 3)
@@ -42,8 +42,13 @@ def along(
     ``rel`` is in cells from the first node and already clamped on a bounded axis.
     The weights are ``B_{p-1}(rel - k - 1/2)``; the ``degree`` edges are indexed by
     their first node. On a bounded axis the edges are ``0 .. num - 2``, on a periodic
-    one ``0 .. num - 1`` (wrapped).
+    one ``0 .. num - 1`` (wrapped). On a clamped axis (``periodic`` 2) they are the
+    rescaled clamped B-splines of `clamped_cell`, ``0 .. num + degree - 3``, all present.
     """
+    if periodic == 2:
+        edges, weights = clamped_cell(rel, num, degree, True)
+        present = [np.ones(np.shape(rel), dtype=bool)] * degree
+        return list(edges), list(weights), present
     shifted = rel - 0.5
     lower = degree - 1
     shift = 0.5 if lower % 2 == 0 else 0.0
@@ -69,7 +74,7 @@ def _clamp(rel: np.ndarray, num: np.ndarray, periodic: np.ndarray) -> np.ndarray
     """``rel`` (ndim, ...) clamped to ``[0, num - 1]`` on the bounded axes."""
     out = rel.copy()
     for d in range(rel.shape[0]):
-        if not periodic[d]:
+        if periodic[d] != 1:
             out[d] = np.clip(out[d], 0.0, num[d] - 1)
     return out
 
@@ -85,9 +90,9 @@ def _edge_weights(
     parts = []
     for d in range(ndim):
         if d == axis:
-            parts.append(along(rel[d], int(num[d]), bool(periodic[d]), degree))
+            parts.append(along(rel[d], int(num[d]), int(periodic[d]), degree))
         else:
-            nodes, weights = spline_cell(rel[d], int(num[d]), bool(periodic[d]), degree)
+            nodes, weights = spline_cell(rel[d], int(num[d]), int(periodic[d]), degree)
             parts.append(
                 (list(nodes), list(weights), [np.ones(rel.shape[1], bool)] * len(nodes))
             )
@@ -117,6 +122,7 @@ def gather_edges_spline(
     """
     _check(degree)
     ndim = positions.shape[0]
+    periodic = np.asarray(periodic, dtype=int)
     rel = _clamp(
         (positions - np.asarray(lower)[:, None]) / np.asarray(cell_size)[:, None],
         num,
@@ -135,7 +141,7 @@ def _gauss(count: int) -> tuple[np.ndarray, np.ndarray]:
     return 0.5 * (points + 1.0), 0.5 * weights
 
 
-def _cuts(r0: np.ndarray, r1: np.ndarray, shift: float, num, periodic) -> np.ndarray:
+def _cuts(r0: np.ndarray, r1: np.ndarray, shift: float, num, periodic) -> np.ndarray:  # noqa: C901
     """The path parameters in (0, 1) where each path crosses a knot plane or a wall.
 
     ``r0`` and ``r1`` are ``(ndim, N)`` in cells; the result is ``(N, M)``, padded
@@ -144,18 +150,19 @@ def _cuts(r0: np.ndarray, r1: np.ndarray, shift: float, num, periodic) -> np.nda
     ndim, count = r0.shape
     columns = []
     for d in range(ndim):
+        offset = 0.0 if periodic[d] == 2 else shift  # clamped knots: the nodes
         low = np.minimum(r0[d], r1[d])
         high = np.maximum(r0[d], r1[d])
-        first = np.floor(low - shift) + 1.0  # the first plane above low
-        crossings = np.maximum(np.floor(high - shift) - first + 1.0, 0.0)
+        first = np.floor(low - offset) + 1.0  # the first plane above low
+        crossings = np.maximum(np.floor(high - offset) - first + 1.0, 0.0)
         most = int(crossings.max()) if count else 0
         delta = r1[d] - r0[d]
         safe = np.where(delta == 0.0, 1.0, delta)
         for j in range(most):
-            plane = first + j + shift
+            plane = first + j + offset
             t = (plane - r0[d]) / safe
             columns.append(np.where(j < crossings, t, 1.0))
-        if not periodic[d]:
+        if periodic[d] != 1:
             for wall in (0.0, num[d] - 1.0):
                 t = (wall - r0[d]) / safe
                 columns.append(np.where((delta != 0.0) & (t > 0.0) & (t < 1.0), t, 1.0))
@@ -186,7 +193,7 @@ def deposit_paths_spline(
     lower = np.asarray(lower, dtype=float)[:, None]
     cell_size = np.asarray(cell_size, dtype=float)[:, None]
     num = np.asarray(num)
-    periodic = np.asarray(periodic, dtype=bool)
+    periodic = np.asarray(periodic, dtype=int)
     keep = (charges != 0.0) & np.all(np.isfinite(start), axis=0)
     keep &= np.all(np.isfinite(end), axis=0)
     r0 = (start[:, keep] - lower) / cell_size

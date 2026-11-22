@@ -29,8 +29,10 @@ class BlockGrid(NamedTuple):
 
     ``geometry`` is the same grid as the kernels' trailing arguments, Python
     scalars: ``(*lower, *cell_size, *num_nodes, *periodic)``, one entry per axis
-    each (``periodic`` as 0 or 1). ``index`` selects the nodes of the grid in
-    `Field.local_with_halos`.
+    each (``periodic`` as a boundary code: 0 bounded, 1 periodic, 2 clamped). ``index``
+    selects the nodes of the grid in `Field.local_with_halos`. ``clamped`` marks the
+    axes with clamped spline knots (`mpifield.splines` with ``clamped=True``): there an
+    array of degree p holds ``num_nodes + p - 1`` coefficients instead of the nodes.
     """
 
     bounds: Bounds
@@ -39,6 +41,7 @@ class BlockGrid(NamedTuple):
     periodic: tuple[bool, ...]
     geometry: tuple[float | int, ...]
     index: tuple[slice, ...]
+    clamped: tuple[bool, ...] = ()
 
     @classmethod
     def from_geometry(
@@ -47,23 +50,28 @@ class BlockGrid(NamedTuple):
         cell_size: tuple[float, ...],
         num_nodes: tuple[int, ...],
         periodic: tuple[bool, ...] | None = None,
+        clamped: tuple[bool, ...] | None = None,
     ) -> BlockGrid:
         """Return the grid of a whole array of ``num_nodes`` nodes from ``lower`` on.
 
         For running a weighting on an array that is not a field's stored block
         (`Weighting.scatter_block`). The arguments may be sequences or
         arrays on either side (a `Field.block_grid` on the GPU holds CuPy
-        arrays). ``periodic`` defaults to bounded axes.
+        arrays). ``periodic`` defaults to bounded axes; ``clamped`` marks bounded axes
+        with clamped spline knots (none by default).
         """
         lower = tuple(float(v) for v in lower)
         cell_size = tuple(float(v) for v in cell_size)
         num_nodes = tuple(int(n) for n in num_nodes)
         ndim = len(num_nodes)
         flags = (False,) * ndim if periodic is None else tuple(map(bool, periodic))
-        if not len(lower) == len(cell_size) == len(flags) == ndim:
+        ends = (False,) * ndim if clamped is None else tuple(map(bool, clamped))
+        if not len(lower) == len(cell_size) == len(flags) == len(ends) == ndim:
             raise ValueError(
-                "lower, cell_size, num_nodes and periodic differ in length"
+                "lower, cell_size, num_nodes, periodic and clamped differ in length"
             )
+        if any(f and e for f, e in zip(flags, ends, strict=True)):
+            raise ValueError("an axis is either periodic or clamped")
         lower_bound = np.asarray(lower, dtype=float)
         spacing = np.asarray(cell_size, dtype=float)
         nodes = np.asarray(num_nodes, dtype=int)
@@ -74,6 +82,15 @@ class BlockGrid(NamedTuple):
             grid_spacing=spacing,
             num_gridpoints=nodes,
             periodic=flags,
-            geometry=(*lower, *cell_size, *num_nodes, *(int(flag) for flag in flags)),
+            geometry=(
+                *lower,
+                *cell_size,
+                *num_nodes,
+                *(
+                    2 if end else int(flag)
+                    for flag, end in zip(flags, ends, strict=True)
+                ),
+            ),
             index=(slice(None),) * ndim,
+            clamped=ends,
         )

@@ -729,3 +729,65 @@ def test_spline_form_kernels_match_cpu_kernels(tmp_path, ndim, periodic, degree)
             ["result"],
         )
         np.testing.assert_allclose(result, expected, rtol=1e-12, atol=1e-12)
+
+
+@pytest.mark.parametrize("degree", [2, 3])
+@pytest.mark.parametrize("ndim", [1, 2, 3])
+def test_clamped_axes_in_the_cuda_spline_kernels(tmp_path, ndim, degree):
+    """Boundary code 2 (clamped knots): node deposit and path deposit against NumPy."""
+    case = _quadratic_case(ndim, 40 + degree)
+    codes = (2, 1, 2)[:ndim]
+    geometry = case["geometry"] + ", " + ", ".join(str(c) for c in codes)
+    size = tuple(
+        n + (degree - 1 if c == 2 else 0)
+        for n, c in zip(case["shape"], codes, strict=True)
+    )
+    arguments = (*case["lower"], *case["spacing"], *case["shape"], *codes, degree)
+    scatter = f"scatter_spline_{ndim}d"
+    expected = np.zeros((*size, case["ncomp"]))
+    with xp.kernels.use_host_kernel_implementation("numpy"):
+        KERNELS[scatter](case["points"], case["values"], expected, *arguments)
+    (result,) = _run(
+        tmp_path,
+        KERNELS[scatter].cuda_kernel,
+        {
+            "positions": case["points"],
+            "values": case["values"],
+            "field": np.zeros_like(expected),
+        },
+        {"positions": 2, "values": 2, "field": ndim + 1},
+        (
+            case["n"],
+            f"{scatter}(positions_view, values_view, field_view, {geometry}, {degree})",
+        ),
+        ["field"],
+    )
+    np.testing.assert_allclose(result, expected, rtol=1e-12, atol=1e-12)
+
+    rng = np.random.default_rng(degree)
+    end = case["points"] + rng.normal(
+        scale=3 * case["spacing"][:, None], size=case["points"].shape
+    )
+    charges = case["values"][0].copy()
+    deposit = f"deposit_paths_spline_{ndim}d"
+    expected = np.zeros((*size, ndim))
+    with xp.kernels.use_host_kernel_implementation("numpy"):
+        KERNELS[deposit](case["points"], end, charges, expected, *arguments)
+    (result,) = _run(
+        tmp_path,
+        KERNELS[deposit].cuda_kernel,
+        {
+            "start": case["points"],
+            "end": end,
+            "charges": charges,
+            "edges": np.zeros_like(expected),
+        },
+        {"start": 2, "end": 2, "charges": 1, "edges": ndim + 1},
+        (
+            case["n"],
+            f"{deposit}(start_view, end_view, charges_view, edges_view, "
+            f"{geometry}, {degree})",
+        ),
+        ["edges"],
+    )
+    np.testing.assert_allclose(result, expected, rtol=1e-12, atol=1e-12)

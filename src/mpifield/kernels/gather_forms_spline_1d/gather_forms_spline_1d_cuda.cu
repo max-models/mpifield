@@ -24,7 +24,7 @@ void gather_forms_spline_1d(
     const long long marker = blockDim.x * (long long)blockIdx.x + threadIdx.x;
     if (marker >= positions.shape[1]) return;
     double rel_x = (positions(0, marker) - lower_x) / cell_size_x;
-    if (!periodic_x) { if (rel_x < 0.0) rel_x = 0.0; if (rel_x > num_x - 1) rel_x = num_x - 1; }
+    if (periodic_x != 1) { if (rel_x < 0.0) rel_x = 0.0; if (rel_x > num_x - 1) rel_x = num_x - 1; }
     int index_x[4]; double weight_x[4]; int exists_x[4]; int size_x;
     for (long long c = 0; c < field.shape[1]; ++c) {
         if (mpifield_staggered(form, 1, (int)c, 0)) {

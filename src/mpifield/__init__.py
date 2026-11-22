@@ -10,19 +10,22 @@
 deposits the current of charges moving along paths onto the edges, conserving
 `LINEAR`'s charge exactly. `splines` returns the shape of a B-spline degree: the
 node weighting and the edge weighting that matches it (`Splines`), which the codes
-take instead of pairing weightings themselves.
+take instead of pairing weightings themselves; ``splines(p, clamped=True)`` the
+same on clamped knots, the spaces of spline finite elements, whose 1D evaluation and
+mass matrices `mpifield.bsplines` provides.
 """
 
 from importlib.metadata import PackageNotFoundError, version
 
 import scope_profiler as sp
 
+from mpifield import bsplines
 from mpifield._profiling import PROFILE_TAGS
 from mpifield._types import BlockGrid, Bounds
 from mpifield.edges import CUBIC_EDGES, QUADRATIC_EDGES, WHITNEY, EdgeWeighting
 from mpifield.field import Field
 from mpifield.prescribed import axial_potential, electric_field_from_potential
-from mpifield.splines import SPLINES, Splines, splines
+from mpifield.splines import CLAMPED_SPLINES, SPLINES, Splines, splines
 from mpifield.weighting import CUBIC, LINEAR, QUADRATIC, Weighting
 
 try:
@@ -34,6 +37,7 @@ except PackageNotFoundError:  # not installed, e.g. run from a source tree
 sp.register_opt_in_tag(*PROFILE_TAGS)
 
 __all__ = [
+    "CLAMPED_SPLINES",
     "CUBIC",
     "CUBIC_EDGES",
     "LINEAR",
@@ -49,6 +53,7 @@ __all__ = [
     "Weighting",
     "__version__",
     "axial_potential",
+    "bsplines",
     "electric_field_from_potential",
     "splines",
 ]

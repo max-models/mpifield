@@ -50,13 +50,13 @@ def _gather_chunk_2d(
     across_y = np.zeros(4)
     for marker in range(first, last):
         rel_x = (positions[0, marker] - lower_x) * inverse_x
-        if periodic_x == 0:
+        if periodic_x != 1:
             if rel_x < 0.0:
                 rel_x = 0.0
             if rel_x > num_x - 1:
                 rel_x = num_x - 1.0
         rel_y = (positions[1, marker] - lower_y) * inverse_y
-        if periodic_y == 0:
+        if periodic_y != 1:
             if rel_y < 0.0:
                 rel_y = 0.0
             if rel_y > num_y - 1:

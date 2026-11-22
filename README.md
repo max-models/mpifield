@@ -69,7 +69,9 @@ phi.plot(name="potential", units="V")  # through plasma-plots
   weighting and the edge weighting that matches it (`WHITNEY`,
   `QUADRATIC_EDGES`, `CUBIC_EDGES`; the path deposit conserves the node
   charge of the same degree), and its faces and cells, for codes that
-  let the user choose the degree.
+  let the user choose the degree. `splines(p, clamped=True)` gives the
+  same on clamped knots (the spaces of spline finite elements), and
+  `mpifield.bsplines` their 1D evaluation and mass matrices.
 - `mpifield.kernels`: the kernels of the weightings
   (`gather_linear_{1,2,3}d`, `scatter_linear_{1,2,3}d`,
   `gather_quadratic_{1,2,3}d`, `scatter_quadratic_{1,2,3}d`, and

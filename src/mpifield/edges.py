@@ -111,6 +111,7 @@ class EdgeWeighting:
     deposit_paths: Mapping[int, KernelFunction]
     halo: int = 1
     degree: int | None = None
+    clamps: bool = False
 
     def __post_init__(self) -> None:
         """Check the dimensions, the halo and the degree; freeze the kernel mappings."""
@@ -141,11 +142,24 @@ class EdgeWeighting:
         """Return the path deposit kernel for ``ndim`` dimensions."""
         return self._kernel(self.deposit_paths, ndim, "deposit_paths")
 
-    @staticmethod
-    def _check(edges: Array, grid: BlockGrid) -> int:
-        """The number of dimensions of ``grid``, checking the shape of ``edges``."""
+    def _check(self, edges: Array, grid: BlockGrid) -> int:
+        """The number of dimensions of ``grid``, checking the shape of ``edges``.
+
+        On a clamped axis the array holds ``num_nodes + degree - 1`` entries.
+        """
+        from mpifield.weighting import _check_clamps
+
+        _check_clamps(self, grid)
         ndim = len(grid.periodic)
-        expected = (*(int(n) for n in grid.num_gridpoints), ndim)
+        ends = grid.clamped or (False,) * ndim
+        extra = 0 if self.degree is None else self.degree - 1
+        expected = (
+            *(
+                int(n) + (extra if end else 0)
+                for n, end in zip(grid.num_gridpoints, ends, strict=True)
+            ),
+            ndim,
+        )
         if tuple(edges.shape) != expected:
             raise ValueError(
                 f"an edge field on this grid is {expected}, got {edges.shape}"
@@ -278,6 +292,7 @@ def _spline_edges(name: str, degree: int) -> EdgeWeighting:
         },
         halo=2,
         degree=degree,
+        clamps=True,
     )
 
 

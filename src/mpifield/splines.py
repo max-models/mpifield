@@ -23,6 +23,15 @@ bounded walls the gathered fields commute with the discrete curl and divergence:
 faces of ``C e`` gather the curl of the edge field, the cells of ``D f`` the divergence
 of the face field.
 
+Clamped splines (``splines(p, clamped=True)``, the spaces of FEEC codes such as GEMPIC):
+on the axes a `BlockGrid` marks ``clamped`` the knots are the nodes, the end ones
+repeated ``p + 1`` times, so an array of degree p holds ``num_nodes + p - 1``
+coefficients (one fewer for a component staggered along that axis). The staggered
+functions there are the rescaled ``D_i = p / (t_(i+p) - t_i) B_(i,p-1)``, for which
+``B_(i,p)' = D_i - D_(i+1)`` holds exactly, so charge conservation and the commuting
+derivatives hold up to the walls. Every weighting of a clamped `Splines` runs on the
+spline kernels, which take periodic, folded and clamped axes alike.
+
 A code takes a `Splines`, or a degree resolved with `splines`, instead of importing the
 weightings, and never pairs them itself::
 
@@ -39,16 +48,28 @@ from typing import Any
 
 from methodcard import method
 
-from mpifield.edges import CUBIC_EDGES, QUADRATIC_EDGES, WHITNEY, EdgeWeighting
+from mpifield.edges import (
+    CUBIC_EDGES,
+    QUADRATIC_EDGES,
+    WHITNEY,
+    EdgeWeighting,
+    _spline_edges,
+)
 from mpifield.kernels.gather_forms_spline_1d import kernel as gather_forms_spline_1d
 from mpifield.kernels.gather_forms_spline_2d import kernel as gather_forms_spline_2d
 from mpifield.kernels.gather_forms_spline_3d import kernel as gather_forms_spline_3d
+from mpifield.kernels.gather_spline_1d import kernel as gather_spline_1d
+from mpifield.kernels.gather_spline_2d import kernel as gather_spline_2d
+from mpifield.kernels.gather_spline_3d import kernel as gather_spline_3d
 from mpifield.kernels.scatter_forms_spline_1d import kernel as scatter_forms_spline_1d
 from mpifield.kernels.scatter_forms_spline_2d import kernel as scatter_forms_spline_2d
 from mpifield.kernels.scatter_forms_spline_3d import kernel as scatter_forms_spline_3d
-from mpifield.weighting import CUBIC, LINEAR, QUADRATIC, Weighting
+from mpifield.kernels.scatter_spline_1d import kernel as scatter_spline_1d
+from mpifield.kernels.scatter_spline_2d import kernel as scatter_spline_2d
+from mpifield.kernels.scatter_spline_3d import kernel as scatter_spline_3d
+from mpifield.weighting import CUBIC, LINEAR, QUADRATIC, Weighting, _WithDegree
 
-__all__ = ["SPLINES", "Splines", "splines"]
+__all__ = ["CLAMPED_SPLINES", "SPLINES", "Splines", "splines"]
 
 
 @method(
@@ -82,6 +103,7 @@ class Splines:
     ``nodes`` deposits and gathers on the nodes (0-forms), ``edges`` on the edges
     (1-forms), or is ``None`` while that degree has no edge weighting. Both must
     carry the degree. ``faces`` (3D) and ``cells`` hold the 2-forms and the top form.
+    With ``clamped`` every weighting takes clamped axes (``clamps``).
     """
 
     degree: int
@@ -89,6 +111,7 @@ class Splines:
     edges: EdgeWeighting | None = None
     faces: Weighting | None = None
     cells: Weighting | None = None
+    clamped: bool = False
 
     def __post_init__(self) -> None:
         """Check that the weightings have the degree."""
@@ -102,6 +125,12 @@ class Splines:
                 f"the edge weighting {self.edges.name!r} has degree "
                 f"{self.edges.degree}, not {self.degree}"
             )
+        if self.clamped:
+            for weighting in (self.nodes, self.edges, self.faces, self.cells):
+                if weighting is not None and not weighting.clamps:
+                    raise ValueError(
+                        f"the {weighting.name} weighting does not take clamped axes"
+                    )
 
     @property
     def halo(self) -> int:
@@ -121,8 +150,10 @@ class Splines:
     def __repr__(self) -> str:
         """Name the degree and the weightings."""
         edges = None if self.edges is None else self.edges.name
+        clamped = ", clamped=True" if self.clamped else ""
         return (
-            f"Splines(degree={self.degree}, nodes={self.nodes.name!r}, edges={edges!r})"
+            f"Splines(degree={self.degree}, nodes={self.nodes.name!r}, "
+            f"edges={edges!r}{clamped})"
         )
 
 
@@ -158,6 +189,7 @@ def _faces(name: str, degree: int) -> Weighting:
         scatter={3: _WithForm(_SCATTER_FORMS[3], degree, 2)},
         gather={3: _WithForm(_GATHER_FORMS[3], degree, 2)},
         halo=2 if degree > 1 else 1,
+        clamps=True,
     )
 
 
@@ -168,6 +200,21 @@ def _cells(name: str, degree: int) -> Weighting:
         scatter={n: _WithForm(_SCATTER_FORMS[n], degree, n) for n in (1, 2, 3)},
         gather={n: _WithForm(_GATHER_FORMS[n], degree, n) for n in (1, 2, 3)},
         halo=2 if degree > 1 else 1,
+        clamps=True,
+    )
+
+
+def _spline_nodes(name: str, degree: int) -> Weighting:
+    """The node weighting of a degree on the spline kernels (any boundary code)."""
+    scatter = {1: scatter_spline_1d, 2: scatter_spline_2d, 3: scatter_spline_3d}
+    gather = {1: gather_spline_1d, 2: gather_spline_2d, 3: gather_spline_3d}
+    return Weighting(
+        name,
+        scatter={n: _WithDegree(scatter[n], degree) for n in (1, 2, 3)},
+        gather={n: _WithDegree(gather[n], degree) for n in (1, 2, 3)},
+        halo=2 if degree > 1 else 1,
+        degree=degree,
+        clamps=True,
     )
 
 
@@ -180,19 +227,45 @@ SPLINES: dict[int, Splines] = {
     3: Splines(3, CUBIC, CUBIC_EDGES, _faces("cubic", 3), _cells("cubic", 3)),
 }
 
+#: The built-in shapes that take clamped axes, by degree: every weighting on the spline
+#: kernels (degree 1 and 2 nodes and degree 1 edges as well).
+CLAMPED_SPLINES: dict[int, Splines] = {
+    1: Splines(
+        1,
+        _spline_nodes("linear", 1),
+        _spline_edges("linear", 1),
+        SPLINES[1].faces,
+        SPLINES[1].cells,
+        clamped=True,
+    ),
+    2: Splines(
+        2,
+        _spline_nodes("quadratic", 2),
+        QUADRATIC_EDGES,
+        SPLINES[2].faces,
+        SPLINES[2].cells,
+        clamped=True,
+    ),
+    3: Splines(3, CUBIC, CUBIC_EDGES, SPLINES[3].faces, SPLINES[3].cells, clamped=True),
+}
 
-def splines(degree: int | Splines) -> Splines:
+
+def splines(degree: int | Splines, clamped: bool = False) -> Splines:
     """Return the built-in `Splines` of B-spline degree ``degree`` (a `Splines` is returned as is).
+
+    With ``clamped`` the one whose weightings all take clamped axes (`CLAMPED_SPLINES`).
 
     Raises:
         ValueError: If there is no built-in shape of that degree.
     """
     if isinstance(degree, Splines):
+        if clamped and not degree.clamped:
+            raise ValueError(f"{degree!r} does not take clamped axes")
         return degree
     if isinstance(degree, bool) or int(degree) != degree:
         raise ValueError(f"a spline degree is an integer, got {degree!r}")
     try:
-        return SPLINES[int(degree)]
+        return (CLAMPED_SPLINES if clamped else SPLINES)[int(degree)]
     except KeyError:
         raise ValueError(
             f"no built-in splines of degree {degree}; degrees {tuple(SPLINES)}"

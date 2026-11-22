@@ -105,7 +105,7 @@ def scatter_spline_2d(
     num_markers = positions.shape[1]
     num_components = values.shape[0]
     num_threads = int(omp_get_max_threads())
-    grid_values = num_x * num_y * num_components
+    grid_values = field.shape[0] * field.shape[1] * num_components
     if (
         num_threads == 1
         or num_markers < MIN_PARALLEL_MARKERS
@@ -130,7 +130,9 @@ def scatter_spline_2d(
             degree,
         )
     else:
-        buffer = np.zeros((num_threads * num_x, num_y, num_components))
+        buffer = np.zeros(
+            (num_threads * field.shape[0], field.shape[1], num_components)
+        )
         chunk = (num_markers + num_threads - 1) // num_threads
         # fmt: off
         #$ omp parallel num_threads(num_threads) private(thread, first, last)
@@ -142,7 +144,7 @@ def scatter_spline_2d(
             positions,
             values,
             buffer,
-            thread * num_x,
+            thread * field.shape[0],
             first,
             last,
             lower_x,
@@ -159,10 +161,10 @@ def scatter_spline_2d(
         #$ omp end parallel
         #$ omp parallel for private(j, component, total, thread)
         # fmt: on
-        for i in range(num_x):
-            for j in range(num_y):
+        for i in range(field.shape[0]):
+            for j in range(field.shape[1]):
                 for component in range(num_components):
                     total = 0.0
                     for thread in range(num_threads):
-                        total += buffer[thread * num_x + i, j, component]
+                        total += buffer[thread * field.shape[0] + i, j, component]
                     field[i, j, component] += total

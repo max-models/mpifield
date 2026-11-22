@@ -60,9 +60,9 @@ def _stencil(rel, num, periodic, degree, form, component):
     parts = []
     for d in range(ndim):
         if staggered(form, ndim, component, d):
-            parts.append(along(rel[d], int(num[d]), bool(periodic[d]), degree))
+            parts.append(along(rel[d], int(num[d]), int(periodic[d]), degree))
         else:
-            nodes, weights = spline_cell(rel[d], int(num[d]), bool(periodic[d]), degree)
+            nodes, weights = spline_cell(rel[d], int(num[d]), int(periodic[d]), degree)
             parts.append(
                 (list(nodes), list(weights), [np.ones(rel.shape[1], bool)] * len(nodes))
             )
@@ -97,7 +97,7 @@ def gather_forms_spline(
     _check(degree)
     ndim = positions.shape[0]
     _check_form(form, ndim, field.shape[-1])
-    periodic = np.asarray(periodic, dtype=bool)
+    periodic = np.asarray(periodic, dtype=int)
     rel = _relative(positions, lower, cell_size, num, periodic)
     for component in range(field.shape[-1]):
         total = np.zeros(positions.shape[1])
@@ -128,7 +128,7 @@ def scatter_forms_spline(
     _check_form(form, ndim, field.shape[-1])
     keep = np.any(values != 0.0, axis=0)
     positions, values = positions[:, keep], values[:, keep]
-    periodic = np.asarray(periodic, dtype=bool)
+    periodic = np.asarray(periodic, dtype=int)
     rel = _relative(positions, lower, cell_size, num, periodic)
     for component in range(field.shape[-1]):
         for index, weight, exists in _stencil(

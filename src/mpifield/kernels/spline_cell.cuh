@@ -14,10 +14,58 @@
 // The most nodes of a stencil along one axis (degree 3).
 #define MPIFIELD_SPLINE_MAX_NODES 4
 
+// The clamped B-spline stencil of `rel` (in cells) on an axis of `num` nodes: knots
+// on the nodes, the end ones repeated `degree + 1` times. With `staggered` 0 the
+// `degree + 1` B-splines of degree `degree` of the cell; with 1 the `degree`
+// rescaled ones D_i = p / (t_(i+p) - t_i) B_(i,p-1), indexed i - 1. Cox-de Boor.
+__device__ __forceinline__ void mpifield_clamped_cell(
+    double rel, int num, int degree, int staggered, int* node, double* weight
+) {
+    double left[4], right[4];
+    double r = rel;
+    if (r < 0.0) r = 0.0;
+    if (r > num - 1) r = num - 1;
+    int cell = (int)r;
+    if (cell > num - 2) cell = num - 2;
+    const int span = cell + degree;
+    const int order = degree - staggered;
+    weight[0] = 1.0;
+    for (int k = 1; k <= order; ++k) {
+        int low = span + 1 - k - degree;
+        int high = span + k - degree;
+        if (low < 0) low = 0;
+        if (high > num - 1) high = num - 1;
+        left[k] = r - low;
+        right[k] = high - r;
+        double saved = 0.0;
+        for (int m = 0; m < k; ++m) {
+            const double temp = weight[m] / (right[m + 1] + left[k - m]);
+            weight[m] = saved + right[m + 1] * temp;
+            saved = left[k - m] * temp;
+        }
+        weight[k] = saved;
+    }
+    for (int m = 0; m <= order; ++m) {
+        node[m] = cell + m;
+        if (staggered) {
+            const int i = cell + 1 + m;
+            int low = i - degree;
+            int high = i;
+            if (low < 0) low = 0;
+            if (high > num - 1) high = num - 1;
+            weight[m] = weight[m] * degree / (double)(high - low);
+        }
+    }
+}
+
 __device__ __forceinline__ void mpifield_spline_cell(
     double rel, int num, int periodic, int degree, int* node, double* weight
 ) {
-    if (periodic) {
+    if (periodic == 2) {  // a clamped axis
+        mpifield_clamped_cell(rel, num, degree, 0, node, weight);
+        return;
+    }
+    if (periodic == 1) {
         if (!(rel >= 0.0 && rel < num)) rel = rel - num * floor(rel / num);
     } else {
         if (rel < 0.0) rel = 0.0;
@@ -46,7 +94,7 @@ __device__ __forceinline__ void mpifield_spline_cell(
     const int first = middle - degree / 2;
     for (int a = 0; a <= degree; ++a) {
         int k = first + a;
-        if (periodic) {
+        if (periodic == 1) {
             k = (k + num) % num;
         } else {
             if (k < 0) k = 0;

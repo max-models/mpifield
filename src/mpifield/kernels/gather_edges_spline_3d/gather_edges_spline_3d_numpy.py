@@ -37,6 +37,6 @@ def gather_edges_spline_3d(
         np.array([lower_x, lower_y, lower_z]),
         np.array([cell_size_x, cell_size_y, cell_size_z]),
         np.array([num_x, num_y, num_z]),
-        np.array([periodic_x, periodic_y, periodic_z]).astype(bool),
+        np.array([periodic_x, periodic_y, periodic_z]),
         degree,
     )

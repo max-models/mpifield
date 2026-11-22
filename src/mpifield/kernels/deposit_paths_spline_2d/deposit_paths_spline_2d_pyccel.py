@@ -102,7 +102,7 @@ def deposit_paths_spline_2d(
                 for d in range(2):
                     begin = a0[d] + t0 * (a1[d] - a0[d])
                     finish = a0[d] + t1 * (a1[d] - a0[d])
-                    if periodic[d] == 0:
+                    if periodic[d] != 1:
                         if begin < 0.0:
                             begin = 0.0
                         if begin > num[d] - 1:
