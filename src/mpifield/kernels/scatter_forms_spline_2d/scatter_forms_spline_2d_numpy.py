@@ -34,7 +34,7 @@ def scatter_forms_spline_2d(
         np.array([lower_x, lower_y]),
         np.array([cell_size_x, cell_size_y]),
         np.array([num_x, num_y]),
-        np.array([periodic_x, periodic_y]).astype(bool),
+        np.array([periodic_x, periodic_y]),
         degree,
         form,
     )

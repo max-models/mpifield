@@ -32,12 +32,12 @@ def scatter_spline_2d(
     if not deposit.all():
         positions, values = positions[:, deposit], values[:, deposit]
     nodes_x, weights_x = spline_cell(
-        (positions[0] - lower_x) / cell_size_x, num_x, bool(periodic_x), degree
+        (positions[0] - lower_x) / cell_size_x, num_x, int(periodic_x), degree
     )
     nodes_y, weights_y = spline_cell(
-        (positions[1] - lower_y) / cell_size_y, num_y, bool(periodic_y), degree
+        (positions[1] - lower_y) / cell_size_y, num_y, int(periodic_y), degree
     )
-    flat = field.reshape(num_x * num_y, field.shape[-1])  # a view
+    flat = field.reshape(-1, field.shape[-1])  # a view
     for i, wx in zip(nodes_x, weights_x, strict=True):
         for j, wy in zip(nodes_y, weights_y, strict=True):
-            np.add.at(flat, i * num_y + j, (wx * wy * values).T)
+            np.add.at(flat, i * field.shape[1] + j, (wx * wy * values).T)

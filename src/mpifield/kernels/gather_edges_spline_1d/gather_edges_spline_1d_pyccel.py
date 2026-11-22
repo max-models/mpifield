@@ -37,7 +37,7 @@ def _gather_chunk_1d(
     exists_x = np.zeros(4, dtype=int)
     for marker in range(first, last):
         rel_x = (positions[0, marker] - lower_x) * inverse_x
-        if periodic_x == 0:
+        if periodic_x != 1:
             if rel_x < 0.0:
                 rel_x = 0.0
             if rel_x > num_x - 1:

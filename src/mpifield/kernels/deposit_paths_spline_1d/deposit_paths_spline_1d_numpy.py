@@ -31,6 +31,6 @@ def deposit_paths_spline_1d(
         np.array([lower_x]),
         np.array([cell_size_x]),
         np.array([num_x]),
-        np.array([periodic_x]).astype(bool),
+        np.array([periodic_x]),
         degree,
     )

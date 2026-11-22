@@ -8,7 +8,12 @@ The Pyccel version of ``spline_edges.cuh`` (CUDA) and of the helpers of
 
 Plain functions (locals, loops): the kernels call them from chunk functions whose calls
 are per thread. Comparisons instead of ``min``/``max``, which Pyccel turns into calls.
+A ``periodic`` code of 2 marks a clamped axis (`clamped_cell`, a copy of the one in
+``spline_cell_pyccel``: the kernels import from one block module each).
 """
+
+import numpy as np
+from pyccel.decorators import stack_array
 
 
 def floor_int(x: float) -> int:
@@ -17,6 +22,65 @@ def floor_int(x: float) -> int:
     if x < whole:
         whole -= 1
     return whole
+
+
+@stack_array("left", "right")
+def clamped_cell(
+    rel: float,
+    num: int,
+    degree: int,
+    staggered: int,
+    node: "int[:]",
+    weight: "float[:]",
+) -> None:
+    """The clamped B-spline stencil of ``rel`` (in cells) on an axis of ``num`` nodes.
+
+    The knots are the nodes, the end ones repeated ``degree + 1`` times
+    (``t_k = clip(k - degree, 0, num - 1)``); there are ``num + degree - 1`` functions.
+    With ``staggered`` 0 these are the ``degree + 1`` B-splines of degree ``degree``
+    that are non-zero in the cell of ``rel``, indexed from the first one; with 1 the
+    ``degree`` rescaled B-splines ``D_i = p / (t_(i+p) - t_i) B_(i,p-1)`` (``i >= 1``),
+    indexed ``i - 1``, for which ``B_(i,p)' = D_i - D_(i+1)``. Cox-de Boor recursion.
+    """
+    left = np.zeros(4)
+    right = np.zeros(4)
+    r = rel
+    if r < 0.0:
+        r = 0.0
+    if r > num - 1:
+        r = num - 1.0
+    cell = int(r)
+    if cell > num - 2:
+        cell = num - 2
+    span = cell + degree
+    order = degree - staggered
+    weight[0] = 1.0
+    for k in range(1, order + 1):
+        low = span + 1 - k - degree
+        high = span + k - degree
+        if low < 0:
+            low = 0
+        if high > num - 1:
+            high = num - 1
+        left[k] = r - low
+        right[k] = high - r
+        saved = 0.0
+        for m in range(k):
+            temp = weight[m] / (right[m + 1] + left[k - m])
+            weight[m] = saved + right[m + 1] * temp
+            saved = left[k - m] * temp
+        weight[k] = saved
+    for m in range(order + 1):
+        node[m] = cell + m
+        if staggered == 1:
+            i = cell + 1 + m
+            low = i - degree
+            high = i
+            if low < 0:
+                low = 0
+            if high > num - 1:
+                high = num - 1
+            weight[m] = weight[m] * degree / (high - low)
 
 
 def along_stencil(
@@ -34,6 +98,11 @@ def along_stencil(
     it does not exist), ``0 .. num - 1`` wrapped on a periodic one. On the upper wall
     the stencil is the last cell's.
     """
+    if periodic == 2:
+        clamped_cell(rel, num, degree, 1, edge, weight)
+        for a in range(degree):
+            exists[a] = 1
+        return
     lower = degree - 1
     r = rel
     if periodic == 1 and not (r >= 0.0 and r < num):
@@ -131,14 +200,15 @@ def path_cuts(
             continue
         low = r0[d] if delta > 0.0 else r1[d]
         high = r1[d] if delta > 0.0 else r0[d]
-        plane = floor_int(low - shift) + 1.0 + shift  # the first plane above low
+        offset = 0.0 if periodic[d] == 2 else shift  # clamped knots: the nodes
+        plane = floor_int(low - offset) + 1.0 + offset  # the first plane above low
         while plane < high:
             t = (plane - r0[d]) / delta
             if t > 0.0 and t < 1.0:
                 cuts[count] = t
                 count += 1
             plane += 1.0
-        if periodic[d] == 0:
+        if periodic[d] != 1:
             t = (0.0 - r0[d]) / delta
             if t > 0.0 and t < 1.0:
                 cuts[count] = t

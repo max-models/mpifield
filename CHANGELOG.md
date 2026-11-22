@@ -7,6 +7,25 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Clamped splines, the spaces of spline finite elements (GEMPIC, Struphy): a third boundary
+  code per axis, 2 (`BlockGrid.from_geometry(..., clamped=...)`), where the knots are the
+  nodes with the end ones repeated `p + 1` times and an array of degree p holds
+  `num_nodes + p - 1` coefficients. The spline kernels (nodes, edges, faces, cells) take it
+  through the shared blocks (`clamped_cell` in `spline_cell_pyccel.py`, `spline_cell.cuh`,
+  `spline_cell.py`, Cox-de Boor); the staggered functions there are
+  `D_i = p / (t_(i+p) - t_i) B_(i,p-1)`, so the path deposit conserves the charge exactly and
+  faces and cells commute with the curl and divergence up to the walls, and no charge is
+  lost at a wall. `splines(p, clamped=True)` (`CLAMPED_SPLINES`) returns the shapes whose
+  weightings all take clamped axes; `Weighting.clamps` and `EdgeWeighting.clamps` say which
+  do (the linear and quadratic kernels and `WHITNEY` refuse a clamped grid).
+- `mpifield.bsplines`: the 1D clamped spline spaces with the same functions,
+  `clamped_knots`, `num_functions`, `evaluate` (form 0 `B_i`, form 1 `D_i / h`),
+  `quadrature`, `mass_matrix` and `incidence` (`G`, exact derivative), for spline finite
+  element solvers without feectools or Struphy. Tested against `scipy.interpolate.BSpline`,
+  also the folded and periodic weights inside the grid.
+- The scatter kernels of the splines size their thread buffers from the field, so arrays
+  larger than the node grid (clamped coefficients) deposit correctly on many threads.
+
 - B-spline shapes by degree (`mpifield.splines`): `Splines`, the node weighting of a degree
   and the edge weighting that matches it (whose path deposit conserves its charge), and
   `splines(p)` returning the built-in one (`SPLINES`: degree 1 `(LINEAR, WHITNEY)`, 2

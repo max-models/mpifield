@@ -37,13 +37,13 @@ void scatter_forms_spline_3d(
         if (values(c, marker) != 0.0) deposit = true;
     if (!deposit) return;
     double rel_x = (positions(0, marker) - lower_x) / cell_size_x;
-    if (!periodic_x) { if (rel_x < 0.0) rel_x = 0.0; if (rel_x > num_x - 1) rel_x = num_x - 1; }
+    if (periodic_x != 1) { if (rel_x < 0.0) rel_x = 0.0; if (rel_x > num_x - 1) rel_x = num_x - 1; }
     int index_x[4]; double weight_x[4]; int exists_x[4]; int size_x;
     double rel_y = (positions(1, marker) - lower_y) / cell_size_y;
-    if (!periodic_y) { if (rel_y < 0.0) rel_y = 0.0; if (rel_y > num_y - 1) rel_y = num_y - 1; }
+    if (periodic_y != 1) { if (rel_y < 0.0) rel_y = 0.0; if (rel_y > num_y - 1) rel_y = num_y - 1; }
     int index_y[4]; double weight_y[4]; int exists_y[4]; int size_y;
     double rel_z = (positions(2, marker) - lower_z) / cell_size_z;
-    if (!periodic_z) { if (rel_z < 0.0) rel_z = 0.0; if (rel_z > num_z - 1) rel_z = num_z - 1; }
+    if (periodic_z != 1) { if (rel_z < 0.0) rel_z = 0.0; if (rel_z > num_z - 1) rel_z = num_z - 1; }
     int index_z[4]; double weight_z[4]; int exists_z[4]; int size_z;
     for (long long c = 0; c < values.shape[0]; ++c) {
         if (mpifield_staggered(form, 3, (int)c, 0)) {

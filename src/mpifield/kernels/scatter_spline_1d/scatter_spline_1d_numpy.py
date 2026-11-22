@@ -28,7 +28,7 @@ def scatter_spline_1d(
     if not deposit.all():
         positions, values = positions[:, deposit], values[:, deposit]
     nodes_x, weights_x = spline_cell(
-        (positions[0] - lower_x) / cell_size_x, num_x, bool(periodic_x), degree
+        (positions[0] - lower_x) / cell_size_x, num_x, int(periodic_x), degree
     )
     for i, wx in zip(nodes_x, weights_x, strict=True):
         np.add.at(field, i, (wx * values).T)

@@ -72,7 +72,7 @@ void deposit_paths_spline_3d(
             for (int d = 0; d < 3; ++d) {
                 double begin = a0[d] + t0 * (a1[d] - a0[d]);
                 double finish = a0[d] + t1 * (a1[d] - a0[d]);
-                if (!periodic[d]) {
+                if (periodic[d] != 1) {
                     if (begin < 0.0) begin = 0.0;
                     if (begin > num[d] - 1) begin = num[d] - 1;
                     if (finish < 0.0) finish = 0.0;

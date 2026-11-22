@@ -31,13 +31,13 @@ def gather_spline_3d(
 ) -> None:
     """Interpolate ``field`` (nx, ny, nz, components) at the markers into ``result`` (components, N)."""
     nodes_x, weights_x = spline_cell(
-        (positions[0] - lower_x) / cell_size_x, num_x, bool(periodic_x), degree
+        (positions[0] - lower_x) / cell_size_x, num_x, int(periodic_x), degree
     )
     nodes_y, weights_y = spline_cell(
-        (positions[1] - lower_y) / cell_size_y, num_y, bool(periodic_y), degree
+        (positions[1] - lower_y) / cell_size_y, num_y, int(periodic_y), degree
     )
     nodes_z, weights_z = spline_cell(
-        (positions[2] - lower_z) / cell_size_z, num_z, bool(periodic_z), degree
+        (positions[2] - lower_z) / cell_size_z, num_z, int(periodic_z), degree
     )
     total = np.zeros_like(result)
     for i, wx in zip(nodes_x, weights_x, strict=True):

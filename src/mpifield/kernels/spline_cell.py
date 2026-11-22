@@ -66,20 +66,67 @@ def _weights(degree: int, offset: np.ndarray) -> tuple[np.ndarray, ...]:
     symbolic=partial(_method_checks.shape_rules, "cubic"),
     problem=partial(_method_checks.gather_problem, "cubic"),
 )
+def clamped_cell(
+    rel: np.ndarray, num_nodes: int, degree: int, staggered: bool
+) -> tuple[tuple[np.ndarray, ...], tuple[np.ndarray, ...]]:
+    """The clamped B-spline stencil of ``rel`` (in cells) on an axis of ``num_nodes`` nodes.
+
+    The NumPy version of ``clamped_cell`` of ``spline_cell_pyccel.py`` and
+    ``spline_cell.cuh``: knots on the nodes, the end ones repeated ``degree + 1``
+    times, ``num_nodes + degree - 1`` functions. Without ``staggered`` the
+    ``degree + 1`` B-splines of degree ``degree`` non-zero in the cell of ``rel``
+    (indexed from the first one); with it the ``degree`` rescaled B-splines
+    ``D_i = p / (t_(i+p) - t_i) B_(i,p-1)``, indexed ``i - 1``, for which
+    ``B_(i,p)' = D_i - D_(i+1)``. Cox-de Boor recursion, vectorized.
+    """
+    r = np.clip(np.asarray(rel, dtype=float), 0.0, num_nodes - 1)
+    cell = np.minimum(np.floor(r).astype(np.int_), num_nodes - 2)
+    span = cell + degree
+    order = degree - int(staggered)
+
+    def knot(k: np.ndarray) -> np.ndarray:
+        return np.clip(k - degree, 0, num_nodes - 1).astype(float)
+
+    weights = [np.ones_like(r)] + [np.zeros_like(r) for _ in range(order)]
+    left = [None] * (order + 1)
+    right = [None] * (order + 1)
+    for k in range(1, order + 1):
+        left[k] = r - knot(span + 1 - k)
+        right[k] = knot(span + k) - r
+        saved = np.zeros_like(r)
+        for m in range(k):
+            temp = weights[m] / (right[m + 1] + left[k - m])
+            weights[m] = saved + right[m + 1] * temp
+            saved = left[k - m] * temp
+        weights[k] = saved
+    nodes = tuple(cell + m for m in range(order + 1))
+    if staggered:
+        for m in range(order + 1):
+            i = cell + 1 + m
+            weights[m] = weights[m] * degree / (knot(i + degree) - knot(i))
+    return nodes, tuple(weights)
+
+
 def spline_cell(
-    rel: np.ndarray, num_nodes: int, periodic: bool, degree: int
+    rel: np.ndarray, num_nodes: int, periodic: int, degree: int
 ) -> tuple[tuple[np.ndarray, ...], tuple[np.ndarray, ...]]:
     """Return the ``degree + 1`` stencil nodes and their B-spline weights of degree ``degree``.
 
     ``rel`` is the position in units of the node spacing from the first node. The
     stencil of an even degree is centred on the nearest node, the one of an odd degree
-    on the cell holding the position. On a periodic axis the ``num_nodes`` nodes cover
-    ``num_nodes`` cells and a position is wrapped into the period. On a bounded axis a
-    position is clamped to [0, ``num_nodes`` - 1] and a stencil node past the edge is
-    the edge node.
+    on the cell holding the position. ``periodic`` is the axis's boundary code: 1, a
+    periodic axis, where the ``num_nodes`` nodes cover ``num_nodes`` cells and a
+    position is wrapped into the period; 0, a bounded one (fold), where a position is
+    clamped to [0, ``num_nodes`` - 1] and a stencil node past the edge is the edge node;
+    2, a clamped one (`clamped_cell`: clamped knots, ``num_nodes + degree - 1``
+    functions).
     """
     if degree not in DEGREES:
         raise ValueError(f"spline degrees are {DEGREES}, got {degree}")
+    if periodic == 2:  # a clamped axis
+        if degree == 0:
+            raise ValueError("a clamped axis needs a degree of at least 1")
+        return clamped_cell(rel, num_nodes, degree, False)
     rel = np.asarray(rel, dtype=float)
     if periodic:
         outside = ~((rel >= 0.0) & (rel < num_nodes))

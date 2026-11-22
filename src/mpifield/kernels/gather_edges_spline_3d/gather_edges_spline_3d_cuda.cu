@@ -37,11 +37,11 @@ void gather_edges_spline_3d(
     int edge_z[4]; double along_z[4]; int exists_z[4];
     int node_z[4]; double across_z[4];
     double rel_x = (positions(0, marker) - lower_x) / cell_size_x;
-    if (!periodic_x) { if (rel_x < 0.0) rel_x = 0.0; if (rel_x > num_x - 1) rel_x = num_x - 1; }
+    if (periodic_x != 1) { if (rel_x < 0.0) rel_x = 0.0; if (rel_x > num_x - 1) rel_x = num_x - 1; }
     double rel_y = (positions(1, marker) - lower_y) / cell_size_y;
-    if (!periodic_y) { if (rel_y < 0.0) rel_y = 0.0; if (rel_y > num_y - 1) rel_y = num_y - 1; }
+    if (periodic_y != 1) { if (rel_y < 0.0) rel_y = 0.0; if (rel_y > num_y - 1) rel_y = num_y - 1; }
     double rel_z = (positions(2, marker) - lower_z) / cell_size_z;
-    if (!periodic_z) { if (rel_z < 0.0) rel_z = 0.0; if (rel_z > num_z - 1) rel_z = num_z - 1; }
+    if (periodic_z != 1) { if (rel_z < 0.0) rel_z = 0.0; if (rel_z > num_z - 1) rel_z = num_z - 1; }
     mpifield_along_stencil(rel_x, num_x, periodic_x, degree, edge_x, along_x, exists_x);
     mpifield_spline_cell(rel_y, num_y, periodic_y, degree, node_y, across_y);
     mpifield_spline_cell(rel_z, num_z, periodic_z, degree, node_z, across_z);

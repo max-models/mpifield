@@ -24,7 +24,7 @@ void gather_edges_spline_1d(
     if (marker >= positions.shape[1]) return;
     int edge_x[4]; double along_x[4]; int exists_x[4];
     double rel_x = (positions(0, marker) - lower_x) / cell_size_x;
-    if (!periodic_x) { if (rel_x < 0.0) rel_x = 0.0; if (rel_x > num_x - 1) rel_x = num_x - 1; }
+    if (periodic_x != 1) { if (rel_x < 0.0) rel_x = 0.0; if (rel_x > num_x - 1) rel_x = num_x - 1; }
     mpifield_along_stencil(rel_x, num_x, periodic_x, degree, edge_x, along_x, exists_x);
     {
     double total = 0.0;

@@ -31,9 +31,9 @@ void gather_edges_spline_2d(
     int edge_y[4]; double along_y[4]; int exists_y[4];
     int node_y[4]; double across_y[4];
     double rel_x = (positions(0, marker) - lower_x) / cell_size_x;
-    if (!periodic_x) { if (rel_x < 0.0) rel_x = 0.0; if (rel_x > num_x - 1) rel_x = num_x - 1; }
+    if (periodic_x != 1) { if (rel_x < 0.0) rel_x = 0.0; if (rel_x > num_x - 1) rel_x = num_x - 1; }
     double rel_y = (positions(1, marker) - lower_y) / cell_size_y;
-    if (!periodic_y) { if (rel_y < 0.0) rel_y = 0.0; if (rel_y > num_y - 1) rel_y = num_y - 1; }
+    if (periodic_y != 1) { if (rel_y < 0.0) rel_y = 0.0; if (rel_y > num_y - 1) rel_y = num_y - 1; }
     mpifield_along_stencil(rel_x, num_x, periodic_x, degree, edge_x, along_x, exists_x);
     mpifield_spline_cell(rel_y, num_y, periodic_y, degree, node_y, across_y);
     {
