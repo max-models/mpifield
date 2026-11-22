@@ -64,8 +64,8 @@ phi.plot(name="potential", units="V")  # through plasma-plots
   `mpifield.weighting`'s kernel convention. `Weighting.scatter_block` and `gather_block` run
   one on plain arrays, e.g. one patch of a refined mesh.
 - `splines(p)`: the shape of B-spline degree `p` (`Splines`), the node weighting and the edge
-  weighting that matches it (`WHITNEY` for degree 1), for codes that let the user choose the
-  degree.
+  weighting that matches it (`WHITNEY`, `QUADRATIC_EDGES`, `CUBIC_EDGES`; the path deposit
+  conserves the node charge of the same degree), for codes that let the user choose the degree.
 - `mpifield.kernels`: the kernels of the weightings (`gather_linear_{1,2,3}d`,
   `scatter_linear_{1,2,3}d`, `gather_quadratic_{1,2,3}d`, `scatter_quadratic_{1,2,3}d`, and
   `gather_spline_{1,2,3}d`, `scatter_spline_{1,2,3}d` with the degree 0 to 3 as an argument)

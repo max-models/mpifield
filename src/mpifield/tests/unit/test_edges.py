@@ -217,7 +217,7 @@ def test_shape_and_argument_errors():
         partial.gather_kernel(3)
     with pytest.raises(ValueError, match="has none"):
         partial.deposit_paths_kernel(2)
-    assert repr(WHITNEY) == "EdgeWeighting('whitney', ndim=(1, 2, 3), halo=1)"
+    assert repr(WHITNEY) == "EdgeWeighting('whitney', ndim=(1, 2, 3), halo=1, degree=1)"
 
 
 def test_the_numpy_edge_weights_are_the_pyccel_ones():

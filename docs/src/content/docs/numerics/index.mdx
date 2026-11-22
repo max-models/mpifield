@@ -54,8 +54,11 @@ The deposit is a sum of weights, not a density: divide it by $\prod_d h_d$ for o
 **[`splines(p)`](/mpifield/numerics/splines/)** returns the shape of B-spline degree $p$
 (`Splines`): the node weighting and the edge weighting that matches it, so that the current
 deposited along a path conserves the node charge. A code takes a degree and never pairs the
-weightings itself. Degree 1 is (`LINEAR`, `WHITNEY`); degrees 2 and 3 have no edge weighting
-yet.
+weightings itself. Degree 1 is (`LINEAR`, `WHITNEY`), degree 2 (`QUADRATIC`, `QUADRATIC_EDGES`)
+and degree 3 (`CUBIC`, `CUBIC_EDGES`): the function of an edge along axis $a$ is
+$B_{p-1}(r_a - k_a - \tfrac12)\prod_{b\ne a} B_p(r_b - k_b)$, the derivative identity
+$B_p'(x) = B_{p-1}(x + \tfrac12) - B_{p-1}(x - \tfrac12)$ makes the path deposit conserve the
+node charge of degree $p$, and each path piece between knot planes is integrated exactly.
 
 <MethodCard name="mpifield.splines.Splines" headingLevel={4} />
 
@@ -120,8 +123,8 @@ arithmetic.
 - No normalisation of the deposit by the cell volume or by a species weight.
 - Only the gradient of a scalar field on the nodes, and the incidence $G$ and $G^\top$ of the
   edges: no curl.
-- Only B-spline weightings up to degree 3 are built in (no Metal kernels for the cubic one),
-  edges only for degree 1, and no energy-conserving (non-adjoint) schemes; a weighting of your
+- Only B-spline weightings up to degree 3 are built in (no Metal kernels for the cubic one or
+  the spline edges; the spline path deposit is serial on the CPU), no faces or cells, and no energy-conserving (non-adjoint) schemes; a weighting of your
   own is a pair of kernels.
 - Markers are not moved between ranks: each rank deposits and gathers its own, and wraps them on
   a split periodic axis.

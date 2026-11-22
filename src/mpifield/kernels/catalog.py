@@ -73,6 +73,12 @@ KERNEL_NAMES = (
     "deposit_paths_1d",
     "deposit_paths_2d",
     "deposit_paths_3d",
+    "gather_edges_spline_1d",
+    "gather_edges_spline_2d",
+    "gather_edges_spline_3d",
+    "deposit_paths_spline_1d",
+    "deposit_paths_spline_2d",
+    "deposit_paths_spline_3d",
 )
 
 _PACKAGE = __name__.rpartition(".")[0]

@@ -10,8 +10,19 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - B-spline shapes by degree (`mpifield.splines`): `Splines`, the node weighting of a degree
   and the edge weighting that matches it (whose path deposit conserves its charge), and
   `splines(p)` returning the built-in one (`SPLINES`: degree 1 `(LINEAR, WHITNEY)`, 2
-  `(QUADRATIC, None)`, 3 `(CUBIC, None)`). `Weighting.degree` and `EdgeWeighting.degree` give
+  `(QUADRATIC, QUADRATIC_EDGES)`, 3 `(CUBIC, CUBIC_EDGES)`). `Weighting.degree` and `EdgeWeighting.degree` give
   the degree of a built-in weighting (`None` for one of your own).
+- `QUADRATIC_EDGES` and `CUBIC_EDGES`: the edge weightings of degree 2 and 3, paired with
+  `QUADRATIC` and `CUBIC` in `splines(p)`. The function of an edge along axis a is
+  `B_{p-1}(r_a - k_a - 1/2) prod_{b != a} B_p(r_b - k_b)`, so the path deposit conserves the
+  charge of the node weighting of the same degree exactly (`divergence_block`), also at
+  bounded walls (paths clamped, edges past a wall dropped) and periodic seams; each path
+  piece between knot planes is integrated exactly by Gauss-Legendre quadrature, and the work
+  `j . e` is the integral of the gathered field along the paths. Kernels
+  `gather_edges_spline_{1,2,3}d` and `deposit_paths_spline_{1,2,3}d` with the degree (1 to 3)
+  as their last argument, in Pyccel (the gather with OpenMP, the path deposit serial), NumPy
+  (`kernels/spline_edges.py`, the reference) and CUDA, sharing `spline_edges_pyccel.py` and
+  `spline_edges.cuh`; degree 1 reproduces `WHITNEY`.
 - `CUBIC`, the cubic B-spline weighting (four nodes per axis, halo 2), on new kernels whose
   degree (0 to 3) is an argument: `scatter_spline_{1,2,3}d` and `gather_spline_{1,2,3}d` in
   Pyccel (OpenMP), NumPy and CUDA (no Metal yet), sharing the stencil block

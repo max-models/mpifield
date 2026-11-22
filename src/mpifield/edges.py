@@ -47,11 +47,18 @@ from mpifield._types import Array, BlockGrid
 from mpifield.kernels.deposit_paths_1d import kernel as deposit_paths_1d
 from mpifield.kernels.deposit_paths_2d import kernel as deposit_paths_2d
 from mpifield.kernels.deposit_paths_3d import kernel as deposit_paths_3d
+from mpifield.kernels.deposit_paths_spline_1d import kernel as deposit_paths_spline_1d
+from mpifield.kernels.deposit_paths_spline_2d import kernel as deposit_paths_spline_2d
+from mpifield.kernels.deposit_paths_spline_3d import kernel as deposit_paths_spline_3d
 from mpifield.kernels.gather_edges_1d import kernel as gather_edges_1d
 from mpifield.kernels.gather_edges_2d import kernel as gather_edges_2d
 from mpifield.kernels.gather_edges_3d import kernel as gather_edges_3d
+from mpifield.kernels.gather_edges_spline_1d import kernel as gather_edges_spline_1d
+from mpifield.kernels.gather_edges_spline_2d import kernel as gather_edges_spline_2d
+from mpifield.kernels.gather_edges_spline_3d import kernel as gather_edges_spline_3d
+from mpifield.weighting import _WithDegree
 
-__all__ = ["WHITNEY", "EdgeWeighting"]
+__all__ = ["CUBIC_EDGES", "QUADRATIC_EDGES", "WHITNEY", "EdgeWeighting"]
 
 KernelFunction = Callable[..., Any]
 
@@ -78,6 +85,7 @@ def _checked(kernels: Mapping[int, KernelFunction], role: str) -> Mapping[int, A
         "on a bounded axis paths and positions are clamped to the grid, as LINEAR clamps a position: the current is that of LINEAR's charge, and the clamped ends move along the wall",
         "paths are not wrapped on a periodic axis; the seam's edges are those of the last node",
         "a path with zero charge or a non-finite end deposits nothing",
+        "`QUADRATIC_EDGES` and `CUBIC_EDGES` (degree $p$ = 2, 3): $W = B_{p-1}(r_a - k_a - 1/2) \\prod_{b \\ne a} B_p(r_b - k_b)$, every piece between knot planes integrated exactly by Gauss-Legendre quadrature, and $G^\\top j$ the change of `QUADRATIC`'s or `CUBIC`'s charge; on a bounded axis an edge past the wall does not exist (the fold of the node charge leaves nothing of it), so near a wall a uniform field is gathered smaller",
     ),
     references=(
         "[Bossavit, IEE Proc. A 135, 493 (1988)](https://doi.org/10.1049/ip-a-1.1988.0077)",
@@ -239,7 +247,8 @@ class EdgeWeighting:
     def __repr__(self) -> str:
         """Name the weighting, its dimensions and its halo."""
         dims = sorted(set(self.gather) | set(self.deposit_paths))
-        return f"EdgeWeighting({self.name!r}, ndim={tuple(dims)}, halo={self.halo})"
+        degree = "" if self.degree is None else f", degree={self.degree}"
+        return f"EdgeWeighting({self.name!r}, ndim={tuple(dims)}, halo={self.halo}{degree})"
 
 
 #: The lowest-order edge (Whitney, Nédélec first kind) gather and its path deposit,
@@ -251,3 +260,35 @@ WHITNEY = EdgeWeighting(
     halo=1,
     degree=1,
 )
+
+
+def _spline_edges(name: str, degree: int) -> EdgeWeighting:
+    """The edge weighting of B-spline degree ``degree`` on the spline edge kernels."""
+    return EdgeWeighting(
+        name,
+        gather={
+            1: _WithDegree(gather_edges_spline_1d, degree),
+            2: _WithDegree(gather_edges_spline_2d, degree),
+            3: _WithDegree(gather_edges_spline_3d, degree),
+        },
+        deposit_paths={
+            1: _WithDegree(deposit_paths_spline_1d, degree),
+            2: _WithDegree(deposit_paths_spline_2d, degree),
+            3: _WithDegree(deposit_paths_spline_3d, degree),
+        },
+        halo=2,
+        degree=degree,
+    )
+
+
+#: The edge weighting that goes with `QUADRATIC`: the function of an edge along axis a
+#: is ``B_1(r_a - k_a - 1/2) prod_(b != a) B_2(r_b - k_b)`` (linear along it, staggered by
+#: half a cell, quadratic across). Its path deposit conserves `QUADRATIC`'s charge exactly:
+#: each path piece between the half-integer knot planes is integrated exactly by
+#: Gauss-Legendre quadrature (`mpifield.kernels.spline_edges`). The path deposit is serial
+#: on the CPU; no Metal kernels.
+QUADRATIC_EDGES = _spline_edges("quadratic", 2)
+
+#: The edge weighting that goes with `CUBIC` (quadratic along an edge, cubic across), as
+#: `QUADRATIC_EDGES` with knots on the integer planes.
+CUBIC_EDGES = _spline_edges("cubic", 3)

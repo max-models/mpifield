@@ -607,3 +607,60 @@ def test_spline_kernels_match_cpu_kernels(tmp_path, ndim, periodic, degree):
         ["result"],
     )
     np.testing.assert_allclose(result, expected, rtol=1e-12, atol=1e-12)
+
+
+@pytest.mark.parametrize("degree", [2, 3])
+@pytest.mark.parametrize(("ndim", "periodic"), QUADRATIC_CASES[::2])
+def test_spline_edge_kernels_match_cpu_kernels(tmp_path, ndim, periodic, degree):
+    case = _quadratic_case(ndim, 20 + degree)
+    rng = np.random.default_rng(degree)
+    grid = BlockGrid.from_geometry(
+        case["lower"], case["spacing"], case["shape"], periodic
+    )
+    flags = ", ".join(str(int(p)) for p in periodic)
+    start = case["points"]
+    end = start + rng.normal(scale=3 * case["spacing"][:, None], size=start.shape)
+    charges = case["values"][0].copy()
+    charges[::7] = 0.0
+    edges_shape = (*case["shape"], ndim)
+    deposit = f"deposit_paths_spline_{ndim}d"
+    expected = np.zeros(edges_shape)
+    with xp.kernels.use_host_kernel_implementation("numpy"):
+        KERNELS[deposit](start, end, charges, expected, *grid.geometry, degree)
+    (result,) = _run(
+        tmp_path,
+        KERNELS[deposit].cuda_kernel,
+        {
+            "start": start,
+            "end": end,
+            "charges": charges,
+            "edges": np.zeros(edges_shape),
+        },
+        {"start": 2, "end": 2, "charges": 1, "edges": ndim + 1},
+        (
+            case["n"],
+            f"{deposit}(start_view, end_view, charges_view, edges_view, "
+            f"{case['geometry']}, {flags}, {degree})",
+        ),
+        ["edges"],
+    )
+    np.testing.assert_allclose(result, expected, rtol=1e-12, atol=1e-12)
+
+    gather = f"gather_edges_spline_{ndim}d"
+    edges = rng.normal(size=edges_shape)
+    expected = np.zeros_like(start)
+    with xp.kernels.use_host_kernel_implementation("numpy"):
+        KERNELS[gather](start, edges, expected, *grid.geometry, degree)
+    (result,) = _run(
+        tmp_path,
+        KERNELS[gather].cuda_kernel,
+        {"positions": start, "edges": edges, "result": np.zeros_like(start)},
+        {"positions": 2, "edges": ndim + 1, "result": 2},
+        (
+            case["n"],
+            f"{gather}(positions_view, edges_view, result_view, "
+            f"{case['geometry']}, {flags}, {degree})",
+        ),
+        ["result"],
+    )
+    np.testing.assert_allclose(result, expected, rtol=1e-12, atol=1e-12)

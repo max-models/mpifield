@@ -10,8 +10,9 @@ the nodes (the 0-forms, a `Weighting`) and on the edges (the 1-forms, an
 
 so that an edge function of direction a has degree p - 1 along a and degree p across,
 and the divergence of the current deposited along a path is the change of the charge
-deposited with the node weighting, exactly. `WHITNEY` is the edge weighting of degree 1;
-the higher degrees have none yet (``edges`` is ``None``).
+deposited with the node weighting, exactly. `WHITNEY` is the edge weighting of degree 1,
+`QUADRATIC_EDGES` and `CUBIC_EDGES` those of degrees 2 and 3 (a `Splines` of your own may
+have none: ``edges`` is ``None``).
 
 A code takes a `Splines`, or a degree resolved with `splines`, instead of importing the
 weightings, and never pairs them itself::
@@ -28,7 +29,7 @@ from dataclasses import dataclass
 
 from methodcard import method
 
-from mpifield.edges import WHITNEY, EdgeWeighting
+from mpifield.edges import CUBIC_EDGES, QUADRATIC_EDGES, WHITNEY, EdgeWeighting
 from mpifield.weighting import CUBIC, LINEAR, QUADRATIC, Weighting
 
 __all__ = ["SPLINES", "Splines", "splines"]
@@ -44,7 +45,7 @@ __all__ = ["SPLINES", "Splines", "splines"]
     assumptions=(
         "uniform B-splines of degree $p$ on a uniform grid, the same weights for a deposit onto node values (finite differences) and onto spline coefficients (finite elements)",
         "the edge weighting conserves the charge of the node weighting of the same degree; a code pairs them only through this object",
-        "only degree 1 has an edge weighting (`WHITNEY`) so far",
+        "the built-in degrees 1 to 3 all have an edge weighting (`WHITNEY`, `QUADRATIC_EDGES`, `CUBIC_EDGES`); faces and cells (2- and 3-forms) are not there yet",
     ),
     references=(
         "[Kraus, Kormann, Morrison and Sonnendrücker, J. Plasma Phys. 83, 905830401 (2017)](https://doi.org/10.1017/S002237781700040X)",
@@ -107,8 +108,8 @@ class Splines:
 #: The built-in shapes, by degree.
 SPLINES: dict[int, Splines] = {
     1: Splines(1, LINEAR, WHITNEY),
-    2: Splines(2, QUADRATIC),
-    3: Splines(3, CUBIC),
+    2: Splines(2, QUADRATIC, QUADRATIC_EDGES),
+    3: Splines(3, CUBIC, CUBIC_EDGES),
 }
 
 

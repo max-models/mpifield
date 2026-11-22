@@ -8,8 +8,10 @@ import pytest
 
 from mpifield import (
     CUBIC,
+    CUBIC_EDGES,
     LINEAR,
     QUADRATIC,
+    QUADRATIC_EDGES,
     SPLINES,
     WHITNEY,
     BlockGrid,
@@ -143,8 +145,8 @@ def test_spline_cell_rejects_other_degrees():
 def test_splines_pair_the_weightings_of_each_degree():
     assert tuple(SPLINES) == (1, 2, 3)
     assert splines(1).nodes is LINEAR and splines(1).edges is WHITNEY
-    assert splines(2).nodes is QUADRATIC and splines(2).edges is None
-    assert splines(3).nodes is CUBIC
+    assert splines(2).nodes is QUADRATIC and splines(2).edges is QUADRATIC_EDGES
+    assert splines(3).nodes is CUBIC and splines(3).edges is CUBIC_EDGES
     assert splines(splines(2)) is splines(2)
     assert [splines(p).halo for p in (1, 2, 3)] == [1, 2, 2]
     assert splines(1).require_edges() is WHITNEY
@@ -159,7 +161,7 @@ def test_splines_check_degrees():
     with pytest.raises(ValueError, match="an integer"):
         splines(True)
     with pytest.raises(ValueError, match="degree 2 has no edge weighting yet"):
-        splines(2).require_edges()
+        Splines(2, QUADRATIC).require_edges()
     with pytest.raises(ValueError, match="has degree 1, not 2"):
         Splines(2, LINEAR)
     with pytest.raises(ValueError, match="has degree 1, not 2"):

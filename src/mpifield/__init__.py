@@ -19,7 +19,7 @@ import scope_profiler as sp
 
 from mpifield._profiling import PROFILE_TAGS
 from mpifield._types import BlockGrid, Bounds
-from mpifield.edges import WHITNEY, EdgeWeighting
+from mpifield.edges import CUBIC_EDGES, QUADRATIC_EDGES, WHITNEY, EdgeWeighting
 from mpifield.field import Field
 from mpifield.prescribed import axial_potential, electric_field_from_potential
 from mpifield.splines import SPLINES, Splines, splines
@@ -35,8 +35,10 @@ sp.register_opt_in_tag(*PROFILE_TAGS)
 
 __all__ = [
     "CUBIC",
+    "CUBIC_EDGES",
     "LINEAR",
     "QUADRATIC",
+    "QUADRATIC_EDGES",
     "SPLINES",
     "WHITNEY",
     "BlockGrid",
