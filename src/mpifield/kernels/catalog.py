@@ -22,13 +22,15 @@ compiled on first use: importing this module needs neither Pyccel nor CuPy. CUDA
 sources include mpifield's header relative to the source root:
 ``#include "mpifield/kernels/linear_cell.cuh"``.
 
-The kernels are the linear (``*_linear_*``) and quadratic (``*_quadratic_*``) deposits
-and gathers of `mpifield.weighting`, and the edge gathers (``gather_edges_*``) and path
-deposits (``deposit_paths_*``) of `mpifield.edges` (edge fields ``num_nodes + (ndim,)``,
-paths ``(ndim, N)``, charges ``(N,)``; no Metal version yet). The quadratic ones, and the 1D and 2D linear
-gathers and the 2D linear deposit, take the arguments of the weighting kernel
-convention; the linear 1D deposit takes one component (``(N,)`` markers, an ``(nx,)``
-grid) and the linear 3D kernels the grid as rows ``(nx * ny * nz, ncomp)``.
+The kernels are the linear (``*_linear_*``), quadratic (``*_quadratic_*``) and spline
+(``*_spline_*``: B-splines of degree 0 to 3, chosen by their last argument ``degree``;
+no Metal version yet) deposits and gathers of `mpifield.weighting`, and the edge gathers
+(``gather_edges_*``) and path deposits (``deposit_paths_*``) of `mpifield.edges` (edge
+fields ``num_nodes + (ndim,)``, paths ``(ndim, N)``, charges ``(N,)``; no Metal version
+yet). The quadratic and spline ones (the latter with ``degree`` after the geometry), the
+1D and 2D linear gathers and the 2D linear deposit take the arguments of the weighting
+kernel convention; the linear 1D deposit takes one component (``(N,)`` markers, an
+``(nx,)`` grid) and the linear 3D kernels the grid as rows ``(nx * ny * nz, ncomp)``.
 
 Marker arrays are component-major: positions ``(ndim, N)``, gather results and
 scatter values ``(ncomp, N)``. Grid fields are ``num_gridpoints + (ncomp,)``; the linear
@@ -59,12 +61,30 @@ KERNEL_NAMES = (
     "scatter_quadratic_1d",
     "scatter_quadratic_2d",
     "scatter_quadratic_3d",
+    "gather_spline_1d",
+    "gather_spline_2d",
+    "gather_spline_3d",
+    "scatter_spline_1d",
+    "scatter_spline_2d",
+    "scatter_spline_3d",
     "gather_edges_1d",
     "gather_edges_2d",
     "gather_edges_3d",
     "deposit_paths_1d",
     "deposit_paths_2d",
     "deposit_paths_3d",
+    "gather_edges_spline_1d",
+    "gather_edges_spline_2d",
+    "gather_edges_spline_3d",
+    "deposit_paths_spline_1d",
+    "deposit_paths_spline_2d",
+    "deposit_paths_spline_3d",
+    "gather_forms_spline_1d",
+    "gather_forms_spline_2d",
+    "gather_forms_spline_3d",
+    "scatter_forms_spline_1d",
+    "scatter_forms_spline_2d",
+    "scatter_forms_spline_3d",
 )
 
 _PACKAGE = __name__.rpartition(".")[0]
@@ -77,12 +97,22 @@ KERNELS = xp.kernels.KernelCatalog(
     }
 )
 
-#: The kernels with a Metal version (``<name>/<name>_metal.py``): the node weightings',
-#: not yet the edge ones (``gather_edges_*``, ``deposit_paths_*``).
+#: The kernels with a Metal version (``<name>/<name>_metal.py``): the linear and
+#: quadratic node weightings', not yet the spline ones (``*_spline_*``) or the edge ones
+#: (``gather_edges_*``, ``deposit_paths_*``).
 METAL_KERNEL_NAMES = tuple(
     name
     for name in KERNEL_NAMES
-    if not name.startswith(("gather_edges", "deposit_paths"))
+    if not name.startswith(
+        (
+            "gather_edges",
+            "deposit_paths",
+            "gather_spline",
+            "scatter_spline",
+            "gather_forms",
+            "scatter_forms",
+        )
+    )
 )
 
 

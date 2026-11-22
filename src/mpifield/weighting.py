@@ -7,7 +7,12 @@ split field needs for it. `Field.scatter` and
 
 - `LINEAR`: cloud-in-cell, two nodes per axis (the default);
 - `QUADRATIC`: the quadratic B-spline ("triangular-shaped cloud"), three
-  nodes per axis, the nearest node and its neighbours.
+  nodes per axis, the nearest node and its neighbours;
+- `CUBIC`: the cubic B-spline, four nodes per axis, on the spline kernels that
+  take the degree (0 to 3) as an argument.
+
+Each built-in weighting knows its B-spline degree (`Weighting.degree`);
+`mpifield.splines` pairs it with the edge weighting of the same degree.
 
 The gather of a weighting is the transpose of its scatter, so that
 ``sum_i gather(G)(x_i) q_i == sum_n G_n scatter(q)_n``: a deposit and a gather
@@ -52,6 +57,9 @@ from mpifield.kernels.gather_linear_3d import kernel as gather_linear_3d
 from mpifield.kernels.gather_quadratic_1d import kernel as gather_quadratic_1d
 from mpifield.kernels.gather_quadratic_2d import kernel as gather_quadratic_2d
 from mpifield.kernels.gather_quadratic_3d import kernel as gather_quadratic_3d
+from mpifield.kernels.gather_spline_1d import kernel as gather_spline_1d
+from mpifield.kernels.gather_spline_2d import kernel as gather_spline_2d
+from mpifield.kernels.gather_spline_3d import kernel as gather_spline_3d
 from mpifield.kernels.scatter_linear_1d import kernel as scatter_linear_1d
 from mpifield.kernels.scatter_linear_1d.scatter_linear_1d_numpy import (
     scatter_linear_1d as scatter_linear_1d_numpy,
@@ -61,8 +69,11 @@ from mpifield.kernels.scatter_linear_3d import kernel as scatter_linear_3d
 from mpifield.kernels.scatter_quadratic_1d import kernel as scatter_quadratic_1d
 from mpifield.kernels.scatter_quadratic_2d import kernel as scatter_quadratic_2d
 from mpifield.kernels.scatter_quadratic_3d import kernel as scatter_quadratic_3d
+from mpifield.kernels.scatter_spline_1d import kernel as scatter_spline_1d
+from mpifield.kernels.scatter_spline_2d import kernel as scatter_spline_2d
+from mpifield.kernels.scatter_spline_3d import kernel as scatter_spline_3d
 
-__all__ = ["LINEAR", "QUADRATIC", "Weighting"]
+__all__ = ["CUBIC", "LINEAR", "QUADRATIC", "Weighting"]
 
 KernelFunction = Callable[..., Any]
 
@@ -102,7 +113,9 @@ class Weighting:
     some dimensions only. ``halo`` is the number of halo nodes a field split over
     ranks needs, so that every marker in a block's own cells deposits into and
     gathers from the stored block: for a stencil of ``s`` nodes per axis,
-    ``(s + 1) // 2``.
+    ``(s + 1) // 2``. ``degree`` is the B-spline degree of the shape, for a
+    weighting that is one (``None`` otherwise): the codes check it where a
+    degree matters, such as the edge weighting that must go with it.
 
     Examples:
     --------
@@ -115,11 +128,14 @@ class Weighting:
     scatter: Mapping[int, KernelFunction]
     gather: Mapping[int, KernelFunction]
     halo: int = 1
+    degree: int | None = None
 
     def __post_init__(self) -> None:
-        """Check the dimensions and the halo; freeze the kernel mappings."""
+        """Check the dimensions, the halo and the degree; freeze the kernel mappings."""
         if self.halo < 0:
             raise ValueError(f"halo must be >= 0, got {self.halo}")
+        if self.degree is not None and self.degree < 0:
+            raise ValueError(f"degree must be >= 0, got {self.degree}")
         object.__setattr__(self, "scatter", _frozen(self.scatter, "scatter"))
         object.__setattr__(self, "gather", _frozen(self.gather, "gather"))
 
@@ -220,7 +236,8 @@ class Weighting:
     def __repr__(self) -> str:
         """Name the weighting, its dimensions and its halo."""
         dims = sorted(set(self.scatter) | set(self.gather))
-        return f"Weighting({self.name!r}, ndim={tuple(dims)}, halo={self.halo})"
+        degree = "" if self.degree is None else f", degree={self.degree}"
+        return f"Weighting({self.name!r}, ndim={tuple(dims)}, halo={self.halo}{degree})"
 
 
 def _scatter_linear_1d(
@@ -291,6 +308,7 @@ LINEAR = Weighting(
     scatter={1: _scatter_linear_1d, 2: scatter_linear_2d, 3: _scatter_linear_3d},
     gather={1: gather_linear_1d, 2: gather_linear_2d, 3: _gather_linear_3d},
     halo=1,
+    degree=1,
 )
 
 #: Quadratic B-spline weights ("triangular-shaped cloud"): each marker on its
@@ -305,4 +323,40 @@ QUADRATIC = Weighting(
     scatter={1: scatter_quadratic_1d, 2: scatter_quadratic_2d, 3: scatter_quadratic_3d},
     gather={1: gather_quadratic_1d, 2: gather_quadratic_2d, 3: gather_quadratic_3d},
     halo=2,
+    degree=2,
+)
+
+
+@dataclass(frozen=True)
+class _WithDegree:
+    """A spline kernel with its degree appended: a kernel of the weighting convention."""
+
+    kernel: KernelFunction
+    degree: int
+
+    def __call__(self, *arguments: Any) -> None:
+        """Run the kernel with the weighting convention's arguments and the degree."""
+        self.kernel(*arguments, self.degree)
+
+
+#: Cubic B-spline weights: each marker on the four nodes around it along each axis
+#: (the left node of its cell, one below and two above), with weights
+#: ``(1 - d)^3 / 6``, ``(3 d^3 - 6 d^2 + 4) / 6``, ``(-3 d^3 + 3 d^2 + 3 d + 1) / 6`` and
+#: ``d^3 / 6`` for the fraction ``d`` of the cell. Smoother than `QUADRATIC` (continuous
+#: second derivative) for 4^ndim nodes per marker. On the spline kernels (degree 3),
+#: with the fold of `QUADRATIC` at bounded edges; no Metal kernels yet.
+CUBIC = Weighting(
+    "cubic",
+    scatter={
+        1: _WithDegree(scatter_spline_1d, 3),
+        2: _WithDegree(scatter_spline_2d, 3),
+        3: _WithDegree(scatter_spline_3d, 3),
+    },
+    gather={
+        1: _WithDegree(gather_spline_1d, 3),
+        2: _WithDegree(gather_spline_2d, 3),
+        3: _WithDegree(gather_spline_3d, 3),
+    },
+    halo=2,
+    degree=3,
 )

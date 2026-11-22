@@ -31,9 +31,12 @@ one-dimensional B-splines:
 2. **[Quadratic weights](/mpifield/numerics/kernels-quadratic-cell/)** (`QUADRATIC`,
    triangular-shaped cloud), $w_2$, three nodes per axis around the nearest one: a continuous
    first derivative and less aliasing noise, for $3^n$ nodes per marker instead of $2^n$.
+3. **[Spline weights](/mpifield/numerics/kernels-spline-cell/)** of degree 0 to 3, the degree an
+   argument of the `*_spline_*` kernels: degree 1 and 2 give the weights of `LINEAR` and
+   `QUADRATIC`, degree 3 is `CUBIC` (four nodes per axis, a continuous second derivative).
 
-Both sum to one over the nodes and reproduce the position as their first moment, so a deposit
-keeps the total value and a gather is exact for constant and linear fields; both gather a
+All of them from degree 1 on sum to one over the nodes and reproduce the position as their first moment, so a deposit
+keeps the total value and a gather is exact for constant and linear fields; they gather a
 smooth field to second order in $h$. At a bounded edge the weights beyond it fold onto the edge
 nodes, which keeps the total; a periodic axis wraps.
 
@@ -45,6 +48,23 @@ force of its own.
 <MethodCard name="mpifield.weighting.Weighting" headingLevel={3} />
 
 The deposit is a sum of weights, not a density: divide it by $\prod_d h_d$ for one.
+
+### Splines by degree
+
+**[`splines(p)`](/mpifield/numerics/splines/)** returns the shape of B-spline degree $p$
+(`Splines`): the node weighting and the edge weighting that matches it, so that the current
+deposited along a path conserves the node charge. A code takes a degree and never pairs the
+weightings itself. Degree 1 is (`LINEAR`, `WHITNEY`), degree 2 (`QUADRATIC`, `QUADRATIC_EDGES`)
+and degree 3 (`CUBIC`, `CUBIC_EDGES`): the function of an edge along axis $a$ is
+$B_{p-1}(r_a - k_a - \tfrac12)\prod_{b\ne a} B_p(r_b - k_b)$, the derivative identity
+$B_p'(x) = B_{p-1}(x + \tfrac12) - B_{p-1}(x - \tfrac12)$ makes the path deposit conserve the
+node charge of degree $p$, and each path piece between knot planes is integrated exactly.
+`faces` (3D) and `cells` complete the sequence: degree $p$ along a face's normal and $p - 1$
+across, $p - 1$ along every axis for a cell. At bounded walls the $B_p$ factors fold and the
+staggered $B_{p-1}$ factors drop what lies past the wall, so the gathered fields commute with
+the discrete curl and divergence.
+
+<MethodCard name="mpifield.splines.Splines" headingLevel={4} />
 
 ## Edge fields and currents
 
@@ -65,7 +85,7 @@ energy- and charge-conserving implicit PIC; patchwork composes them across refin
 ## Over MPI ranks
 
 Each rank stores its block of the grid with halo nodes, at least as many as the weighting needs
-(one for `LINEAR`, two for `QUADRATIC`). The kernels see the stored block as a grid of its own
+(one for `LINEAR`, two for `QUADRATIC` and `CUBIC`). The kernels see the stored block as a grid of its own
 ([`Field.block_grid`](/mpifield/numerics/field/)), without the halos beyond a bounded edge of
 the domain. A cycle of a particle code then runs, on every rank:
 
@@ -107,8 +127,10 @@ arithmetic.
 - No normalisation of the deposit by the cell volume or by a species weight.
 - Only the gradient of a scalar field on the nodes, and the incidence $G$ and $G^\top$ of the
   edges: no curl.
-- Only linear and quadratic weightings are built in, and no energy-conserving (non-adjoint)
-  schemes; a weighting of your own is a pair of kernels.
+- Only B-spline weightings up to degree 3 are built in (no Metal kernels for the cubic one or
+  the spline edges, faces and cells; the spline path deposit is serial on the CPU), only the
+  folded boundary rule (no clamped knots), and no energy-conserving (non-adjoint) schemes; a weighting of your
+  own is a pair of kernels.
 - Markers are not moved between ranks: each rank deposits and gathers its own, and wraps them on
   a split periodic axis.
 - `electric_field_from_potential` differences one-sided at both ends of every axis, also a

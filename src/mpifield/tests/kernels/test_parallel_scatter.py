@@ -115,6 +115,34 @@ def test_scatter_quadratic_parallel(ndim, periodic, components) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("ndim", "periodic"),
+    [(1, (0,)), (1, (1,)), (2, (0, 1)), (3, (1, 0, 1))],
+)
+@pytest.mark.parametrize("degree", [0, 3])
+def test_scatter_spline_parallel(ndim, periodic, degree) -> None:
+    rng = np.random.default_rng(4)
+    shape = (24, 16, 10)[:ndim]
+    positions = rng.uniform(-0.05, 1.05, (ndim, NUM_MARKERS))
+    values = rng.normal(size=(2, NUM_MARKERS))
+    values[:, ::5] = 0.0
+    positions[:, ::5] = np.nan  # dead markers deposit nothing
+    args = (
+        positions,
+        values,
+        *(0.0,) * ndim,
+        *(1 / n for n in shape),
+        *shape,
+        *periodic,
+        degree,
+    )
+    compiled, reference = _both(f"scatter_spline_{ndim}d", args, (*shape, 2))
+    np.testing.assert_allclose(compiled, reference, rtol=0, atol=1e-10)
+    np.testing.assert_allclose(
+        (compiled - 0.5).reshape(-1, 2).sum(axis=0), values.sum(axis=1)
+    )
+
+
 @pytest.mark.parametrize("ndim", [2, 3])
 @pytest.mark.parametrize("periodic_x", [0, 1])
 @pytest.mark.parametrize("ordering", ["sorted", "unsorted"])
