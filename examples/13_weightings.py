@@ -1,22 +1,22 @@
 """Weightings and grid noise
 
-Deposit the same markers with nearest-grid-point, linear and quadratic weights, the first one written here in NumPy.
+Deposit the same markers with nearest-grid-point, linear, quadratic and cubic weights, the first one written here in NumPy.
 
 `Field.scatter` and `Field.gather` take a `Weighting`: a deposit and its gather for each
-number of dimensions. `LINEAR` (cloud-in-cell) and `QUADRATIC` (the quadratic B-spline) are
-built in; the nearest-grid-point weighting below is a pair of NumPy functions with the
+number of dimensions. `LINEAR` (cloud-in-cell), `QUADRATIC` and `CUBIC` (the quadratic and
+cubic B-splines; `mpifield.splines(p)` returns the one of degree p) are built in; the nearest-grid-point weighting below is a pair of NumPy functions with the
 arguments of the kernel convention in `mpifield.weighting`. A compiled one is a kernel folder
 with Pyccel, NumPy and CUDA versions, loaded with `cunumpy.kernels.Kernel.from_folder`, as
 mpifield's own. The markers sample a uniform density with ten per cell on a periodic grid, so
-every departure from the mean is noise: the wider the stencil, the less of it, at $1$, $2^2$
-and $3^2$ nodes per marker. The plot shows the density along one row of the grid.
+every departure from the mean is noise: the wider the stencil, the less of it, at $1$, $2^2$,
+$3^2$ and $4^2$ nodes per marker. The plot shows the density along one row of the grid.
 """
 
 import matplotlib.pyplot as plt
 import numpy as np
 import plasma_plots  # noqa: F401  (registers the .plasma accessor)
 
-from mpifield import LINEAR, QUADRATIC, Field, Weighting
+from mpifield import CUBIC, LINEAR, QUADRATIC, Field, Weighting
 
 
 def _nearest(positions, geometry):
@@ -56,7 +56,7 @@ kwargs = {
 }
 
 fig, ax = plt.subplots(figsize=(8, 4.5), layout="constrained")
-for weighting in (NEAREST, LINEAR, QUADRATIC):
+for weighting in (NEAREST, LINEAR, QUADRATIC, CUBIC):
     density = Field(**kwargs)
     density.scatter(positions, weights, weighting)
     data = density.to_numpy()[..., 0]

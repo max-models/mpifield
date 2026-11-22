@@ -548,3 +548,62 @@ def test_gather_edges_matches_cpu_kernel(tmp_path, ndim, periodic):
         ["result"],
     )
     np.testing.assert_allclose(result, expected, rtol=1e-12, atol=1e-12)
+
+
+@pytest.mark.parametrize("degree", [0, 3])
+@pytest.mark.parametrize(("ndim", "periodic"), QUADRATIC_CASES[::2])
+def test_spline_kernels_match_cpu_kernels(tmp_path, ndim, periodic, degree):
+    case = _quadratic_case(ndim, 10 + degree)
+    case["values"][:, ::7] = 0.0
+    case["points"][:, ::7] = np.nan  # dead markers may sit anywhere
+    grid = BlockGrid.from_geometry(
+        case["lower"], case["spacing"], case["shape"], periodic
+    )
+    flags = ", ".join(str(int(p)) for p in periodic)
+    scatter = f"scatter_spline_{ndim}d"
+    expected = np.zeros_like(case["field"])
+    with xp.kernels.use_host_kernel_implementation("numpy"):
+        KERNELS[scatter](
+            case["points"], case["values"], expected, *grid.geometry, degree
+        )
+    (result,) = _run(
+        tmp_path,
+        KERNELS[scatter].cuda_kernel,
+        {
+            "positions": case["points"],
+            "values": case["values"],
+            "field": np.zeros_like(case["field"]),
+        },
+        {"positions": 2, "values": 2, "field": ndim + 1},
+        (
+            case["n"],
+            f"{scatter}(positions_view, values_view, field_view, "
+            f"{case['geometry']}, {flags}, {degree})",
+        ),
+        ["field"],
+    )
+    np.testing.assert_allclose(result, expected, rtol=1e-12, atol=1e-12)
+
+    alive = ~np.isnan(case["points"][0])
+    points = case["points"][:, alive].copy()
+    gather = f"gather_spline_{ndim}d"
+    expected = np.zeros((case["ncomp"], points.shape[1]))
+    with xp.kernels.use_host_kernel_implementation("numpy"):
+        KERNELS[gather](points, case["field"], expected, *grid.geometry, degree)
+    (result,) = _run(
+        tmp_path,
+        KERNELS[gather].cuda_kernel,
+        {
+            "positions": points,
+            "field": case["field"],
+            "result": np.zeros_like(expected),
+        },
+        {"positions": 2, "field": ndim + 1, "result": 2},
+        (
+            points.shape[1],
+            f"{gather}(positions_view, field_view, result_view, "
+            f"{case['geometry']}, {flags}, {degree})",
+        ),
+        ["result"],
+    )
+    np.testing.assert_allclose(result, expected, rtol=1e-12, atol=1e-12)

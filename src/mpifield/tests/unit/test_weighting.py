@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from maybempi import MPI
 
-from mpifield import LINEAR, QUADRATIC, BlockGrid, Field, Weighting
+from mpifield import CUBIC, LINEAR, QUADRATIC, BlockGrid, Field, Weighting
 
 
 def _field(ndim, periodic=None, components=1, **kwargs):
@@ -75,7 +75,11 @@ def test_weighting_checks_its_arguments():
     with pytest.raises(ValueError, match="1, 2 or 3 dimensions, got 4"):
         Weighting("bad", scatter={4: _nearest_node_2d}, gather={})
     assert repr(NEAREST) == "Weighting('nearest', ndim=(2,), halo=1)"
-    assert (LINEAR.halo, QUADRATIC.halo) == (1, 2)
+    with pytest.raises(ValueError, match="degree must be >= 0"):
+        Weighting("bad", scatter={}, gather={}, degree=-1)
+    assert (LINEAR.halo, QUADRATIC.halo, CUBIC.halo) == (1, 2, 2)
+    assert (LINEAR.degree, QUADRATIC.degree, CUBIC.degree) == (1, 2, 3)
+    assert repr(CUBIC) == "Weighting('cubic', ndim=(1, 2, 3), halo=2, degree=3)"
 
 
 def test_the_kernel_mappings_are_read_only():
@@ -84,7 +88,7 @@ def test_the_kernel_mappings_are_read_only():
 
 
 @pytest.mark.parametrize("ndim", [1, 2, 3])
-@pytest.mark.parametrize("weighting", [LINEAR, QUADRATIC], ids=lambda w: w.name)
+@pytest.mark.parametrize("weighting", [LINEAR, QUADRATIC, CUBIC], ids=lambda w: w.name)
 def test_constant_and_linear_fields_are_gathered_exactly_inside(ndim, weighting):
     """Both weightings sum to one and reproduce a linear function away from the edges."""
     field = _field(ndim)

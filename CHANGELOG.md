@@ -7,6 +7,18 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- B-spline shapes by degree (`mpifield.splines`): `Splines`, the node weighting of a degree
+  and the edge weighting that matches it (whose path deposit conserves its charge), and
+  `splines(p)` returning the built-in one (`SPLINES`: degree 1 `(LINEAR, WHITNEY)`, 2
+  `(QUADRATIC, None)`, 3 `(CUBIC, None)`). `Weighting.degree` and `EdgeWeighting.degree` give
+  the degree of a built-in weighting (`None` for one of your own).
+- `CUBIC`, the cubic B-spline weighting (four nodes per axis, halo 2), on new kernels whose
+  degree (0 to 3) is an argument: `scatter_spline_{1,2,3}d` and `gather_spline_{1,2,3}d` in
+  Pyccel (OpenMP), NumPy and CUDA (no Metal yet), sharing the stencil block
+  `kernels/spline_cell_pyccel.py`, `kernels/spline_cell.cuh` and `kernels/spline_cell.py`.
+  Degree 1 and 2 reproduce `LINEAR` and `QUADRATIC`; degree 0 is the nearest grid point.
+  Example 13 compares the cubic noise with the others.
+
 - Edge fields (`mpifield.edges`): `WHITNEY`, an `EdgeWeighting` pairing the lowest-order
   edge (Whitney) gather (`gather_block`) with the deposit of the current of charges moving
   along straight paths (`deposit_paths_block`) on a block, in 1D, 2D and 3D, with the block

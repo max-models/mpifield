@@ -24,10 +24,10 @@ CENTRE = 5
 
 
 def _weighting(name: str) -> Any:
-    """The built-in weighting called ``name`` (``"linear"`` or ``"quadratic"``)."""
-    from mpifield.weighting import LINEAR, QUADRATIC
+    """The built-in weighting called ``name`` (``"linear"``, ``"quadratic"`` or ``"cubic"``)."""
+    from mpifield.weighting import CUBIC, LINEAR, QUADRATIC
 
-    return {"linear": LINEAR, "quadratic": QUADRATIC}[name]
+    return {"linear": LINEAR, "quadratic": QUADRATIC, "cubic": CUBIC}[name]
 
 
 def _grid(num_nodes: tuple[int, ...], periodic: bool) -> Any:
@@ -76,7 +76,15 @@ def _shape(name: str) -> Callable[[Any], Any]:
             (0, True),
         )
 
-    return {"linear": linear, "quadratic": quadratic}[name]
+    def cubic(xi: Any) -> Any:
+        a = sympy.Abs(xi)
+        return sympy.Piecewise(
+            (sympy.Rational(2, 3) - a**2 + a**3 / 2, a <= 1),
+            ((2 - a) ** 3 / 6, a <= 2),
+            (0, True),
+        )
+
+    return {"linear": linear, "quadratic": quadratic, "cubic": cubic}[name]
 
 
 def shape_rules(name: str) -> dict[str, Rule]:
@@ -92,11 +100,19 @@ def shape_rules(name: str) -> dict[str, Rule]:
 
     w = _shape(name)
     xi, r = sympy.symbols("xi r", real=True)
-    reach = 1.0 if name == "linear" else 1.5
+    reach = {"linear": 1.0, "quadratic": 1.5, "cubic": 2.0}[name]
     interior = (reach, NODES - 1 - reach)
     if name == "linear":
         edge = sympy.Piecewise((1, r < 0), (1 - r, True))
         edge_range = (-1.0, 1.0)
+    elif name == "cubic":
+        # node 0 collects the weight of node -1 within the first cell
+        edge = sympy.Piecewise(
+            (sympy.Rational(5, 6), r < 0),
+            ((1 - r) ** 3 / 6 + (3 * r**3 - 6 * r**2 + 4) / 6, r < 1),
+            ((2 - r) ** 3 / 6, True),
+        )
+        edge_range = (-1.0, 1.75)
     else:
         edge = sympy.Piecewise(
             (sympy.Rational(7, 8), r < 0),

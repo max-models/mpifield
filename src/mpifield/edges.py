@@ -93,18 +93,23 @@ class EdgeWeighting:
     ``gather`` and ``deposit_paths`` map a number of dimensions (1, 2, 3) to a kernel
     with the arguments of the module's convention. ``halo`` is the number of halo nodes
     a split edge field needs so that every path piece in a block's own cells deposits
-    into the stored block: 1, the cell's upper nodes.
+    into the stored block: 1, the cell's upper nodes. ``degree`` is the B-spline degree
+    of the node weighting whose charge the path deposit conserves (``None`` when it is
+    not one).
     """
 
     name: str
     gather: Mapping[int, KernelFunction]
     deposit_paths: Mapping[int, KernelFunction]
     halo: int = 1
+    degree: int | None = None
 
     def __post_init__(self) -> None:
-        """Check the dimensions and the halo; freeze the kernel mappings."""
+        """Check the dimensions, the halo and the degree; freeze the kernel mappings."""
         if self.halo < 0:
             raise ValueError(f"halo must be >= 0, got {self.halo}")
+        if self.degree is not None and self.degree < 1:
+            raise ValueError(f"degree must be >= 1, got {self.degree}")
         object.__setattr__(self, "gather", _checked(self.gather, "gather"))
         object.__setattr__(
             self, "deposit_paths", _checked(self.deposit_paths, "deposit_paths")
@@ -244,4 +249,5 @@ WHITNEY = EdgeWeighting(
     gather={1: gather_edges_1d, 2: gather_edges_2d, 3: gather_edges_3d},
     deposit_paths={1: deposit_paths_1d, 2: deposit_paths_2d, 3: deposit_paths_3d},
     halo=1,
+    degree=1,
 )

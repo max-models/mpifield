@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from maybempi import MPI
 
-from mpifield import LINEAR, QUADRATIC, Field
+from mpifield import CUBIC, LINEAR, QUADRATIC, Field
 
 # mpirun -n 2 python src/mpifield/tests/parallel/test_field_mpi.py
 # mpirun -n 2 pytest src/mpifield/tests/parallel/test_field_mpi.py --with-mpi
@@ -424,7 +424,7 @@ def _own_markers(field: Field, positions: np.ndarray) -> np.ndarray:
         ([True, True], (False, True)),
     ],
 )
-@pytest.mark.parametrize("weighting", [LINEAR, QUADRATIC], ids=lambda w: w.name)
+@pytest.mark.parametrize("weighting", [LINEAR, QUADRATIC, CUBIC], ids=lambda w: w.name)
 def test_split_deposit_and_gather_equal_the_serial_ones(
     weighting, decomposition, periodic
 ) -> None:
@@ -526,7 +526,7 @@ def test_export_and_load_under_mpi(tmp_path_factory: pytest.TempPathFactory) -> 
     ("decomposition", "periodic"),
     [([True, False], (False, False)), ([True, True], (True, False))],
 )
-@pytest.mark.parametrize("weighting", [LINEAR, QUADRATIC], ids=lambda w: w.name)
+@pytest.mark.parametrize("weighting", [LINEAR, QUADRATIC, CUBIC], ids=lambda w: w.name)
 def test_split_density_equals_the_serial_one(
     weighting, decomposition, periodic
 ) -> None:

@@ -21,7 +21,7 @@ import cunumpy as xp
 import numpy as np
 import pytest
 
-from mpifield import LINEAR, QUADRATIC, Field
+from mpifield import CUBIC, LINEAR, QUADRATIC, Field
 from mpifield.kernels.catalog import (
     KERNEL_NAMES,
     KERNELS,
@@ -73,6 +73,7 @@ def test_metal_kernel_rejects_unknown_names():
 
 
 def _compiled(name):
+    name = name.replace("_cubic_", "_spline_")  # CUBIC runs the spline kernels
     if not KERNELS[name].host_kernel.kernel.available("pyccel"):
         pytest.skip("Pyccel kernels unavailable")
 
@@ -111,7 +112,7 @@ def _points(rng, field, n=2000):
         (3, (True, True, True), 3),
     ],
 )
-@pytest.mark.parametrize("weighting", [LINEAR, QUADRATIC], ids=lambda w: w.name)
+@pytest.mark.parametrize("weighting", [LINEAR, QUADRATIC, CUBIC], ids=lambda w: w.name)
 def test_compiled_deposits_match_numpy(ndim, periodic, components, weighting):
     _compiled(f"scatter_{weighting.name}_{ndim}d")
     rng = np.random.default_rng(1)
@@ -143,7 +144,7 @@ def test_compiled_deposits_match_numpy(ndim, periodic, components, weighting):
         (3, (True, False, True)),
     ],
 )
-@pytest.mark.parametrize("weighting", [LINEAR, QUADRATIC], ids=lambda w: w.name)
+@pytest.mark.parametrize("weighting", [LINEAR, QUADRATIC, CUBIC], ids=lambda w: w.name)
 def test_compiled_gathers_match_numpy(ndim, periodic, weighting):
     _compiled(f"gather_{weighting.name}_{ndim}d")
     rng = np.random.default_rng(2)
@@ -158,7 +159,7 @@ def test_compiled_gathers_match_numpy(ndim, periodic, weighting):
 
 @pytest.mark.parametrize("periodic", [False, True])
 @pytest.mark.parametrize("ndim", [1, 2, 3])
-@pytest.mark.parametrize("weighting", [LINEAR, QUADRATIC], ids=lambda w: w.name)
+@pytest.mark.parametrize("weighting", [LINEAR, QUADRATIC, CUBIC], ids=lambda w: w.name)
 def test_deposit_and_gather_are_transposes(ndim, periodic, weighting):
     """sum_i g(x_i) q_i = sum_n G_n rho_n: each weighting's two kernels are adjoint.
 

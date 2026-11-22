@@ -17,6 +17,8 @@ export default defineDocs({
 		labels: {
 			'mpifield.kernels.linear_cell': 'Linear weights',
 			'mpifield.kernels.quadratic_cell': 'Quadratic weights',
+			'mpifield.kernels.spline_cell': 'Spline weights',
+			'mpifield.splines': 'Splines by degree',
 			'mpifield.weighting': 'Deposit and gather',
 			'mpifield.field': 'Halos, gradient, smoothing',
 			'mpifield.prescribed': 'Prescribed fields',

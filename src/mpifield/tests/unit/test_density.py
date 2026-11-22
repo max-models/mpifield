@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from mpifield import LINEAR, QUADRATIC, Field
+from mpifield import CUBIC, LINEAR, QUADRATIC, Field
 
 
 def _field(periodic: tuple[bool, ...], num_components: int = 1) -> Field:
@@ -19,7 +19,7 @@ def _field(periodic: tuple[bool, ...], num_components: int = 1) -> Field:
     )
 
 
-@pytest.mark.parametrize("weighting", [LINEAR, QUADRATIC], ids=lambda w: w.name)
+@pytest.mark.parametrize("weighting", [LINEAR, QUADRATIC, CUBIC], ids=lambda w: w.name)
 @pytest.mark.parametrize("periodic", [(False, False), (False, True), (True, True)])
 def test_the_density_times_the_node_volumes_is_the_total(weighting, periodic) -> None:
     """Nothing is lost, also at the edges where a node collects half a cell."""
