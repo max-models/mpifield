@@ -58,19 +58,24 @@ phi.plot(name="potential", units="V")  # through plasma-plots
   `magnitude`, global reductions, smoothing filters, `set_inside` for
   simgeometry shapes, `evaluate` to xarray, `plot` with plasma-plots,
   and NetCDF `export`/`load`.
-- `Weighting`: a deposit and its gather for each number of dimensions, and the halo nodes they
-  need. `LINEAR` (the default), `QUADRATIC` and `CUBIC` (B-splines of degree 1 to 3) are built
-  in; a weighting of your own is a pair of functions or compiled kernels with the arguments of
-  `mpifield.weighting`'s kernel convention. `Weighting.scatter_block` and `gather_block` run
-  one on plain arrays, e.g. one patch of a refined mesh.
-- `splines(p)`: the shape of B-spline degree `p` (`Splines`), the node weighting and the edge
-  weighting that matches it (`WHITNEY`, `QUADRATIC_EDGES`, `CUBIC_EDGES`; the path deposit
-  conserves the node charge of the same degree), and its faces and cells, for codes that let
-  the user choose the degree.
-- `mpifield.kernels`: the kernels of the weightings (`gather_linear_{1,2,3}d`,
-  `scatter_linear_{1,2,3}d`, `gather_quadratic_{1,2,3}d`, `scatter_quadratic_{1,2,3}d`, and
-  `gather_spline_{1,2,3}d`, `scatter_spline_{1,2,3}d` with the degree 0 to 3 as an argument)
-  and of the edges, with Pyccel, NumPy, CUDA and (linear, quadratic) Metal versions.
+- `Weighting`: a deposit and its gather for each number of dimensions,
+  and the halo nodes they need. `LINEAR` (the default), `QUADRATIC` and
+  `CUBIC` (B-splines of degree 1 to 3) are built in; a weighting of your
+  own is a pair of functions or compiled kernels with the arguments of
+  `mpifield.weighting`’s kernel convention. `Weighting.scatter_block`
+  and `gather_block` run one on plain arrays, e.g. one patch of a
+  refined mesh.
+- `splines(p)`: the shape of B-spline degree `p` (`Splines`), the node
+  weighting and the edge weighting that matches it (`WHITNEY`,
+  `QUADRATIC_EDGES`, `CUBIC_EDGES`; the path deposit conserves the node
+  charge of the same degree), and its faces and cells, for codes that
+  let the user choose the degree.
+- `mpifield.kernels`: the kernels of the weightings
+  (`gather_linear_{1,2,3}d`, `scatter_linear_{1,2,3}d`,
+  `gather_quadratic_{1,2,3}d`, `scatter_quadratic_{1,2,3}d`, and
+  `gather_spline_{1,2,3}d`, `scatter_spline_{1,2,3}d` with the degree 0
+  to 3 as an argument) and of the edges, with Pyccel, NumPy, CUDA and
+  (linear, quadratic) Metal versions.
 - `electric_field_from_potential` and `axial_potential`: fields from
   prescribed potentials.
 
