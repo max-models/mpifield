@@ -1,8 +1,9 @@
 /* The C version (CPU) of the scatter_linear_1d kernel: see scatter_linear_1d_pyccel.py.
  *
- * The same nodes, weights and operations (no fused multiply-adds, so the same field on
- * one thread). On several OpenMP threads each deposits a contiguous share of the markers
- * into its own grid and the grids are added to the field, as the Pyccel version does.
+ * The same nodes, weights and operations, without fused multiply-adds (the same field as
+ * a Pyccel build that does not contract them, on one thread). On several OpenMP threads
+ * each deposits a contiguous share of the markers into its own grid and the grids are
+ * added to the field, as the Pyccel version does.
  * Taken for C-contiguous arrays; cunumpy runs the Pyccel version for strided ones.
  */
 #include <stdint.h>

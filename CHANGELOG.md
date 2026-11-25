@@ -8,7 +8,7 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - A C version of `scatter_linear_1d` (cunumpy's C host kernels, taken for C-contiguous
-  arrays): the same field as the Pyccel version on one thread, 4.5 to 3.4 ns per marker on a
+  arrays): the same field as the Pyccel version to round-off, 4.5 to 3.4 ns per marker on a
   periodic axis and 3.0 to 2.8 ns on a bounded one (one core, 0.5M markers); on several
   threads each deposits into its own grid, as the Pyccel version does.
 

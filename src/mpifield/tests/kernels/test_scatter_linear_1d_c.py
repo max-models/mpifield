@@ -34,7 +34,8 @@ def test_the_c_version_gives_the_pyccel_field(periodic):
     expected, got = np.full(num, 0.5), np.full(num, 0.5)
     HOST.get("pyccel")(positions, values, expected, *args)
     HOST.get("c")(positions, values, got, *args)
-    np.testing.assert_array_equal(got, expected)
+    # equal to round-off: the Pyccel build may contract multiply-adds, the C one does not
+    np.testing.assert_allclose(got, expected, rtol=1e-13, atol=1e-13)
 
 
 @needs_c
