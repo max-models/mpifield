@@ -86,3 +86,32 @@ def test_the_c_version_on_several_threads():
         [sys.executable, "-c", code], env=env, capture_output=True, text=True
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_the_threaded_deposits_skip_nan_positions_of_zero_values():
+    # the band scan of the threaded scatter_linear_2d/3d read every position: a NaN one
+    # gave an undefined plane, a garbage band and NaN nodes (or a crash)
+    code = textwrap.dedent(
+        """
+        import numpy as np
+        from mpifield.kernels.catalog import KERNELS
+        rng = np.random.default_rng(0)
+        n = 40000
+        for ndim, shape in ((2, (7, 6)), (3, (7, 6, 5))):
+            positions = rng.uniform(-3.0, 9.0, (ndim, n))
+            values = rng.normal(size=(1, n))
+            positions[:, 5] = np.nan
+            values[:, 5] = 0.0
+            # the 2D kernel takes the grid (nx, ny, ncomp), the 3D one its rows
+            field = np.zeros((*shape, 1) if ndim == 2 else (int(np.prod(shape)), 1))
+            geometry = (*([0.0] * ndim), *([1.0] * ndim), *shape, *([1] * ndim))
+            KERNELS[f"scatter_linear_{ndim}d"](positions, values, field, *geometry)
+            assert np.isfinite(field).all()
+            np.testing.assert_allclose(field.sum(), values.sum(), rtol=1e-12)
+        """
+    )
+    env = {**os.environ, "OMP_NUM_THREADS": "3"}
+    result = subprocess.run(
+        [sys.executable, "-c", code], env=env, capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr

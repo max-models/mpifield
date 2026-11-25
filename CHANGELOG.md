@@ -5,6 +5,13 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The threaded 2D and 3D linear deposits (`scatter_linear_2d`, `scatter_linear_3d`, more markers
+  than `MIN_PARALLEL_MARKERS` on several OpenMP threads) skip a NaN or infinite position when
+  they find the x-planes of each thread's markers. Such a marker (a zero value, which deposits
+  nothing) gave an undefined plane, a wrong band and NaN nodes or a crash.
+
 ### Added
 
 - `scatter_rows_3d`, a host-only kernel (C, Pyccel and NumPy versions): the one-component 3D
