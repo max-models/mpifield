@@ -55,3 +55,30 @@ def right_node(left: int, num: int, periodic: int) -> int:
 def cell_fraction(rel: float, left: int) -> float:
     """Return the weight of the right node, ``rel - left`` clamped to ``[0, 1]``."""
     return 0.0 if rel - left < 0.0 else (1.0 if rel - left > 1.0 else rel - left)
+
+
+# The same rules in one form for both kinds of axis, for loops that should vectorise: a
+# loop-invariant ``periodic`` flag in the functions above becomes, in a vectorised loop,
+# both arms of each conditional evaluated for every marker. ``last`` is the last left
+# node, ``num - 2`` on a bounded axis and ``num - 1`` on a periodic one, computed once
+# outside the loop; the results are those of the functions above, bit for bit.
+
+
+@inline
+def wrapped_position(rel: float, num: int, periodic: int) -> float:
+    """Return ``rel`` as `periodic_position` on a periodic axis, unchanged on a bounded one."""
+    return (
+        rel if periodic == 0 or (rel >= 0.0 and rel < num) else rel - num * (rel // num)
+    )
+
+
+@inline
+def clamped_left_node(rel: float, last: int) -> int:
+    """Return `left_node` with ``last = num - 2 + periodic``: ``int(rel)`` clamped to ``0 .. last``."""
+    return 0 if int(rel) < 0 else (last if int(rel) > last else int(rel))
+
+
+@inline
+def next_node(left: int, num: int) -> int:
+    """Return `right_node` on either kind of axis: a bounded axis never has ``left + 1 == num``."""
+    return 0 if left + 1 == num else left + 1

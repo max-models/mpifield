@@ -5,6 +5,16 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- The 3D linear deposit (`scatter_linear_3d`, Pyccel) is about 30% faster on one core (18.2 to
+  14.1 ns per marker for one component, 0.5M markers sorted by cell on a 33 x 32 x 32 grid),
+  with the same results bit for bit: the cell of a marker in one form for bounded and periodic
+  axes, and the one-component loop back on its own. The new inline blocks of
+  `linear_cell_pyccel.py`, `wrapped_position`, `clamped_left_node` (with `last = num - 2 +
+  periodic`) and `next_node`, give the results of `periodic_position`, `left_node` and
+  `right_node` without a periodic flag in the loop, for kernels whose loops should vectorise.
+
 ### Added
 
 - Clamped splines, the spaces of spline finite elements (GEMPIC, Struphy): a third boundary
