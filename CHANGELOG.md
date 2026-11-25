@@ -5,6 +5,15 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `scatter_rows_3d`, a host-only kernel (C, Pyccel and NumPy versions): the one-component 3D
+  linear deposit on contiguous rows of the positions. `LINEAR` takes it for NumPy arrays when
+  its C version is built (cunumpy's C host kernels), and `scatter_linear_3d` otherwise: about
+  1.25x faster on one core (14.5 to 11.6 ns per marker, 0.5M markers sorted by cell on a
+  33 x 32 x 32 grid), the same result on one thread; on several threads each deposits into
+  its own grid, summed at the end.
+
 ### Changed
 
 - The 3D linear deposit (`scatter_linear_3d`, Pyccel) is about 30% faster on one core (18.2 to
