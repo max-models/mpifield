@@ -133,6 +133,10 @@ def _x_rows(
     for marker in range(first, last):
         # the left x-node of _scatter_chunk_2d, compared without min/max
         rel_x = (positions[0, marker] - lower_x) * inverse_x
+        # a NaN or infinite position (a zero-value marker, which deposits nothing) has
+        # no plane: int() of it is undefined in C, and the band would be garbage
+        if not (rel_x > -1.0e300 and rel_x < 1.0e300):
+            continue
         if periodic_x == 1:
             rel_x = periodic_position(rel_x, num_x)
         i_left = left_node(rel_x, num_x, periodic_x)

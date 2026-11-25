@@ -47,6 +47,7 @@ from types import MappingProxyType
 from typing import Any
 
 import cunumpy as xp
+import numpy as np
 from methodcard import method
 
 from mpifield import _method_checks
@@ -69,6 +70,7 @@ from mpifield.kernels.scatter_linear_3d import kernel as scatter_linear_3d
 from mpifield.kernels.scatter_quadratic_1d import kernel as scatter_quadratic_1d
 from mpifield.kernels.scatter_quadratic_2d import kernel as scatter_quadratic_2d
 from mpifield.kernels.scatter_quadratic_3d import kernel as scatter_quadratic_3d
+from mpifield.kernels.scatter_rows_3d import kernel as scatter_rows_3d
 from mpifield.kernels.scatter_spline_1d import kernel as scatter_spline_1d
 from mpifield.kernels.scatter_spline_2d import kernel as scatter_spline_2d
 from mpifield.kernels.scatter_spline_3d import kernel as scatter_spline_3d
@@ -303,8 +305,28 @@ def _rows(field: Array) -> Array:
 def _scatter_linear_3d(
     positions: Array, values: Array, field: Array, *geometry: float | int
 ) -> None:
-    """LINEAR's 3D deposit: the compiled kernel on the grid's rows."""
-    scatter_linear_3d(positions, values, _rows(field), *geometry)
+    """LINEAR's 3D deposit: the compiled kernel on the grid's rows.
+
+    One component on the host goes to ``scatter_rows_3d`` when its C version is built
+    (about 2x faster on one core: the markers' rows are contiguous and the cell needs no
+    periodic branch), otherwise to ``scatter_linear_3d``.
+    """
+    rows = _rows(field)
+    if (
+        type(rows) is np.ndarray
+        and type(positions) is np.ndarray
+        and rows.shape[1] == 1
+        and values.shape[0] == 1
+        and scatter_rows_3d.selected() == "c"
+    ):
+        scatter_rows_3d(
+            *(np.ascontiguousarray(row) for row in positions),
+            np.ascontiguousarray(values[0]),
+            rows.reshape(-1),
+            *geometry,
+        )
+        return
+    scatter_linear_3d(positions, values, rows, *geometry)
 
 
 def _gather_linear_3d(
