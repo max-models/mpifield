@@ -23,9 +23,11 @@ from pyccel.stdlib.internal.openmp import omp_get_max_threads, omp_get_thread_nu
 
 from mpifield.kernels.linear_cell_pyccel import (
     cell_fraction,
+    clamped_left_node,
     left_node,
+    next_node,
     periodic_position,
-    right_node,
+    wrapped_position,
 )
 
 # Fewest markers worth the per-thread buffers.
@@ -61,50 +63,91 @@ def _scatter_chunk_3d(
     buffer is the whole grid); with 0 it is plane ``num_x`` of the band.
     """
     num_components = values.shape[0]
-    # Multiplying by the inverse spacing, and clamping with comparisons: Pyccel
-    # turns min/max into variadic C functions, a call each that the compiler
-    # cannot inline.
+    # Multiplying by the inverse spacing, and the cell in one form for bounded and
+    # periodic axes (`clamped_left_node`, `next_node`): the general helpers' periodic
+    # flag would cost both arms of their conditionals for every marker.
     inverse_x = 1.0 / cell_size_x
     inverse_y = 1.0 / cell_size_y
     inverse_z = 1.0 / cell_size_z
-    for marker in range(first, last):
-        # a zero-weight marker (a dead one left in storage) deposits nothing,
-        # whatever its position
-        if num_components == 1:
+    last_x = num_x - 2 + periodic_x
+    last_y = num_y - 2 + periodic_y
+    last_z = num_z - 2 + periodic_z
+    # the right x-node wraps to plane 0 only in a whole-grid buffer (a band runs on to
+    # plane num_x): one past the last node otherwise
+    wrap_x = num_x if wrap == 1 else num_x + 1
+    if num_components == 1:
+        # the charge deposit: one value, no loop over components
+        for marker in range(first, last):
             single = values[0, marker]
+            # a zero-weight marker (a dead one left in storage) deposits nothing,
+            # whatever its position (a NaN position times zero would still be NaN)
             if single == 0.0:
                 continue
-        else:
-            deposit = False
-            for component in range(num_components):
-                if values[component, marker] != 0.0:
-                    deposit = True
-            if not deposit:
-                continue
-        # the cell and the weights along each axis; a periodic axis takes the
-        # floor modulo only for a position outside [0, n) cells
-        rel_x = (positions[0, marker] - lower_x) * inverse_x
-        if periodic_x == 1:
-            rel_x = periodic_position(rel_x, num_x)
-        i_left = left_node(rel_x, num_x, periodic_x)
+            rel_x = wrapped_position(
+                (positions[0, marker] - lower_x) * inverse_x, num_x, periodic_x
+            )
+            i_left = clamped_left_node(rel_x, last_x)
+            fx = cell_fraction(rel_x, i_left)
+            i_right = next_node(i_left, wrap_x)
+            rel_y = wrapped_position(
+                (positions[1, marker] - lower_y) * inverse_y, num_y, periodic_y
+            )
+            j_left = clamped_left_node(rel_y, last_y)
+            fy = cell_fraction(rel_y, j_left)
+            j_right = next_node(j_left, num_y)
+            rel_z = wrapped_position(
+                (positions[2, marker] - lower_z) * inverse_z, num_z, periodic_z
+            )
+            k_left = clamped_left_node(rel_z, last_z)
+            fz = cell_fraction(rel_z, k_left)
+            k_right = next_node(k_left, num_z)
+            gx = 1.0 - fx
+            gy = 1.0 - fy
+            gz = 1.0 - fz
+            w00 = gx * gy
+            w01 = gx * fy
+            w10 = fx * gy
+            w11 = fx * fy
+            r00 = offset + ((i_left - first_plane) * num_y + j_left) * num_z
+            r01 = offset + ((i_left - first_plane) * num_y + j_right) * num_z
+            r10 = offset + ((i_right - first_plane) * num_y + j_left) * num_z
+            r11 = offset + ((i_right - first_plane) * num_y + j_right) * num_z
+            buffer[r00 + k_left, 0] += w00 * gz * single
+            buffer[r00 + k_right, 0] += w00 * fz * single
+            buffer[r01 + k_left, 0] += w01 * gz * single
+            buffer[r01 + k_right, 0] += w01 * fz * single
+            buffer[r10 + k_left, 0] += w10 * gz * single
+            buffer[r10 + k_right, 0] += w10 * fz * single
+            buffer[r11 + k_left, 0] += w11 * gz * single
+            buffer[r11 + k_right, 0] += w11 * fz * single
+        return
+    for marker in range(first, last):
+        # a zero-weight marker (a dead one left in storage) deposits nothing,
+        # whatever its position (a NaN position times zero would still be NaN)
+        deposit = False
+        for component in range(num_components):
+            if values[component, marker] != 0.0:
+                deposit = True
+        if not deposit:
+            continue
+        rel_x = wrapped_position(
+            (positions[0, marker] - lower_x) * inverse_x, num_x, periodic_x
+        )
+        i_left = clamped_left_node(rel_x, last_x)
         fx = cell_fraction(rel_x, i_left)
-        rel_y = (positions[1, marker] - lower_y) * inverse_y
-        if periodic_y == 1:
-            rel_y = periodic_position(rel_y, num_y)
-        j_left = left_node(rel_y, num_y, periodic_y)
-        j_right = right_node(j_left, num_y, periodic_y)
+        i_right = next_node(i_left, wrap_x)
+        rel_y = wrapped_position(
+            (positions[1, marker] - lower_y) * inverse_y, num_y, periodic_y
+        )
+        j_left = clamped_left_node(rel_y, last_y)
         fy = cell_fraction(rel_y, j_left)
-        rel_z = (positions[2, marker] - lower_z) * inverse_z
-        if periodic_z == 1:
-            rel_z = periodic_position(rel_z, num_z)
-        k_left = left_node(rel_z, num_z, periodic_z)
-        k_right = right_node(k_left, num_z, periodic_z)
+        j_right = next_node(j_left, num_y)
+        rel_z = wrapped_position(
+            (positions[2, marker] - lower_z) * inverse_z, num_z, periodic_z
+        )
+        k_left = clamped_left_node(rel_z, last_z)
         fz = cell_fraction(rel_z, k_left)
-        # the x-planes in the buffer: a band runs past the last plane, the
-        # whole grid (wrap) folds it back to plane 0
-        i_right = i_left + 1
-        if wrap == 1 and i_right == num_x:
-            i_right = 0
+        k_right = next_node(k_left, num_z)
         gx = 1.0 - fx
         gy = 1.0 - fy
         gz = 1.0 - fz
@@ -116,27 +159,16 @@ def _scatter_chunk_3d(
         r01 = offset + ((i_left - first_plane) * num_y + j_right) * num_z
         r10 = offset + ((i_right - first_plane) * num_y + j_left) * num_z
         r11 = offset + ((i_right - first_plane) * num_y + j_right) * num_z
-        if num_components == 1:
-            # the charge deposit: one value, no loop over components
-            buffer[r00 + k_left, 0] += w00 * gz * single
-            buffer[r00 + k_right, 0] += w00 * fz * single
-            buffer[r01 + k_left, 0] += w01 * gz * single
-            buffer[r01 + k_right, 0] += w01 * fz * single
-            buffer[r10 + k_left, 0] += w10 * gz * single
-            buffer[r10 + k_right, 0] += w10 * fz * single
-            buffer[r11 + k_left, 0] += w11 * gz * single
-            buffer[r11 + k_right, 0] += w11 * fz * single
-        else:
-            for component in range(num_components):
-                value = values[component, marker]
-                buffer[r00 + k_left, component] += w00 * gz * value
-                buffer[r00 + k_right, component] += w00 * fz * value
-                buffer[r01 + k_left, component] += w01 * gz * value
-                buffer[r01 + k_right, component] += w01 * fz * value
-                buffer[r10 + k_left, component] += w10 * gz * value
-                buffer[r10 + k_right, component] += w10 * fz * value
-                buffer[r11 + k_left, component] += w11 * gz * value
-                buffer[r11 + k_right, component] += w11 * fz * value
+        for component in range(num_components):
+            value = values[component, marker]
+            buffer[r00 + k_left, component] += w00 * gz * value
+            buffer[r00 + k_right, component] += w00 * fz * value
+            buffer[r01 + k_left, component] += w01 * gz * value
+            buffer[r01 + k_right, component] += w01 * fz * value
+            buffer[r10 + k_left, component] += w10 * gz * value
+            buffer[r10 + k_right, component] += w10 * fz * value
+            buffer[r11 + k_left, component] += w11 * gz * value
+            buffer[r11 + k_right, component] += w11 * fz * value
 
 
 def _x_planes(
